@@ -533,3 +533,57 @@ vector_schema = {
 # Creating the Vector Collection
 # db.create_collection("vectors", validator={"$jsonSchema": vector_schema})
 vectors_collection = db['vectors']
+
+
+# Creating a Chat-History Collection
+# Creating a Chat-History Collection
+chat_history_schema = {
+    "bsonType": "object",
+    "required": ["user_id", "session_id", "messages", "timestamp"],
+    "properties": {
+        "user_id": {
+            "bsonType": "objectId",
+            "description": "Unique identifier for the user"
+        },
+        "session_id": {
+            "bsonType": "string",
+            "description": "Identifier for the session"
+        },
+        "timestamp": {
+            "bsonType": "date",
+            "description": "Timestamp when the chat session started"
+        },
+        "messages": {
+            "bsonType": "array",
+            "description": "List of chat messages",
+            "items": {
+                "bsonType": "object",
+                "properties": {
+                    "prompt": {
+                        "bsonType": "string",
+                        "description": "User's question or prompt"
+                    },
+                    "response": {
+                        "bsonType": "string",
+                        "description": "Assistant's response"
+                    },
+                    "timestamp": {
+                        "bsonType": "date",
+                        "description": "Timestamp of the message"
+                    }
+                }
+            }
+        }
+    }
+}
+
+# Create the collection with the schema
+# db.create_collection("chat_history", validator={"$jsonSchema": chat_history_schema})
+chat_history_collection = db['chat_history']
+
+# Create the collection with the schema
+# db.create_collection("chat_history", validator={"$jsonSchema": chat_history_schema})
+# chat_history_collection = db['chat_history']
+
+
+# database_setup for live polls

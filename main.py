@@ -11,6 +11,8 @@ def init_session_state():
     """Initialize session state variables"""
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
+    if 'user_id' not in st.session_state:
+        st.session_state.user_id = None
     if 'user_type' not in st.session_state:
         st.session_state.user_type = None
     if 'username' not in st.session_state:
@@ -26,6 +28,7 @@ def login_user(username, password, user_type):
         user = faculty_collection.find_one({"full_name": username})
     
     if user and check_password_hash(user['password'], password):
+        st.session_state.user_id = user['_id']
         st.session_state.authenticated = True
         st.session_state.user_type = user_type
         st.session_state.username = username
@@ -113,7 +116,7 @@ def main_dashboard():
 
     # Main content
     if 'selected_session' in st.session_state:
-        display_session_content(selected_course_id, st.session_state.selected_session, st.session_state.username)
+        display_session_content(st.session_state.user_id, selected_course_id, st.session_state.selected_session, st.session_state.username, st.session_state.user_type)
 
 
 def main():

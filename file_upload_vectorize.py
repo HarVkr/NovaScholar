@@ -61,6 +61,30 @@ def upload_resource(course_id, session_id, file_name, file_content, material_typ
     resources_collection.insert_one(resource_data)
     return resource_id
 
+def assignment_submit(student_id, course_id, session_id, file_name, file_content, material_type):
+    # Extract text content from the file
+    text_content = extract_text_from_file(file_content)
+    
+    # Read the file content
+    file_content.seek(0)  # Reset the file pointer to the beginning
+    original_file_content = file_content.read()
+    
+    assignment_data = {
+        "student_id": student_id,
+        "course_id": course_id,
+        "session_id": session_id,
+        "file_name": file_name,
+        "file_type": file_content.type,
+        "text_content": text_content,
+        "file_content": original_file_content,  # Store the original file content
+        "material_type": material_type,
+        "uploaded_at": datetime.utcnow()
+    }
+    courses_collection2.update_one(
+        {"course_id": course_id, "sessions.session_id": session_id},
+        {"$push": {"sessions.$.post_class.assignments": assignment_data}}
+    )
+
 def extract_text_from_file(uploaded_file):
     text = ""
     file_type = uploaded_file.type
