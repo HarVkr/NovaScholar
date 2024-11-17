@@ -6,45 +6,108 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-MONGO_URI = os.getenv('MONGO_URI')
+MONGO_URI = os.getenv("MONGO_URI")
 
 client = MongoClient(MONGO_URI)
 try:
-    client.admin.command('ping')
+    client.admin.command("ping")
     print("MongoDB connection successful")
 except Exception as e:
     print(f"MongoDB connection failed: {e}")
 
-db = client['novascholar_db']
+db = client["novascholar_db"]
+
+########
+# Research Assistant Schema
+research_assistant_schema = {
+    "bsonType": "object",
+    "required": ["full_name", "password", "email", "courses_assisted"],
+    "properties": {
+        "full_name": {
+            "bsonType": "string",
+            "description": "Full name of the research assistant",
+        },
+        "password": {
+            "bsonType": "string",
+            "description": "Hashed password of the research assistant",
+        },
+        "email": {
+            "bsonType": "string",
+            "description": "Email address of the research assistant",
+        },
+        "courses_assisted": {
+            "bsonType": "array",
+            "description": "List of courses the research assistant is assisting",
+            "items": {
+                "bsonType": "object",
+                "required": ["course_id"],
+                "properties": {
+                    "course_id": {
+                        "bsonType": "string",
+                        "description": "ID of the course",
+                    }
+                },
+            },
+        },
+    },
+}
+
+# Create research assistants collection
+research_assistants_collection = db["research_assistants"]
+
+# Create indexes
+research_assistants_collection.create_index("full_name", unique=True)
+research_assistants_collection.create_index("email", unique=True)
+
+
+# Optional: Sample data insertion function
+def insert_sample_research_assistants():
+    sample_research_assistants = [
+        {
+            "full_name": "John Doe RA",
+            "password": generate_password_hash("password123"),
+            "email": "john.ra@example.com",
+            "courses_assisted": [{"course_id": "CS101"}, {"course_id": "CS102"}],
+        }
+    ]
+
+    try:
+        research_assistants_collection.insert_many(sample_research_assistants)
+        print("Sample research assistants inserted successfully!")
+    except Exception as e:
+        print(f"Error inserting sample research assistants: {e}")
+
+
+###########
+
 
 # Define the course schema
 course_schema = {
     "bsonType": "object",
-    "required": ["course_id", "title", "description", "faculty", "faculty_id", "duration", "created_at"],
+    "required": [
+        "course_id",
+        "title",
+        "description",
+        "faculty",
+        "faculty_id",
+        "duration",
+        "created_at",
+    ],
     "properties": {
         "course_id": {
             "bsonType": "string",
-            "description": "Unique identifier for the course"
+            "description": "Unique identifier for the course",
         },
-        "title": {
-            "bsonType": "string",
-            "description": "Title of the course"
-        },
+        "title": {"bsonType": "string", "description": "Title of the course"},
         "description": {
             "bsonType": "string",
-            "description": "Description of the course"
+            "description": "Description of the course",
         },
-        "faculty": {
-            "bsonType": "string",
-            "description": "Name of the faculty"
-        },
-        "duration": {
-            "bsonType": "string",
-            "description": "Duration of the course"
-        },
+        "faculty": {"bsonType": "string", "description": "Name of the faculty"},
+        "duration": {"bsonType": "string", "description": "Duration of the course"},
         "created_at": {
             "bsonType": "date",
-            "description": "Date when the course was created"
+            "description": "Date when the course was created",
         },
         "sessions": {
             "bsonType": "array",
@@ -55,23 +118,20 @@ course_schema = {
                 "properties": {
                     "session_id": {
                         "bsonType": "string",
-                        "description": "Unique identifier for the session"
+                        "description": "Unique identifier for the session",
                     },
                     "title": {
                         "bsonType": "string",
-                        "description": "Title of the session"
+                        "description": "Title of the session",
                     },
-                    "date": {
-                        "bsonType": "date",
-                        "description": "Date of the session"
-                    },
+                    "date": {"bsonType": "date", "description": "Date of the session"},
                     "status": {
                         "bsonType": "string",
-                        "description": "Status of the session (e.g., completed, upcoming)"
+                        "description": "Status of the session (e.g., completed, upcoming)",
                     },
                     "created_at": {
                         "bsonType": "date",
-                        "description": "Date when the session was created"
+                        "description": "Date when the session was created",
                     },
                     "pre_class": {
                         "bsonType": "object",
@@ -86,31 +146,29 @@ course_schema = {
                                     "properties": {
                                         "type": {
                                             "bsonType": "string",
-                                            "description": "Type of resource (e.g., pdf, video)"
+                                            "description": "Type of resource (e.g., pdf, video)",
                                         },
                                         "title": {
                                             "bsonType": "string",
-                                            "description": "Title of the resource"
+                                            "description": "Title of the resource",
                                         },
                                         "url": {
                                             "bsonType": "string",
-                                            "description": "URL of the resource"
+                                            "description": "URL of the resource",
                                         },
                                         "vector": {
                                             "bsonType": "array",
                                             "description": "Vector representation of the resource",
-                                            "items": {
-                                                "bsonType": "double"
-                                            }
-                                        }
-                                    }
-                                }
+                                            "items": {"bsonType": "double"},
+                                        },
+                                    },
+                                },
                             },
                             "completion_required": {
                                 "bsonType": "bool",
-                                "description": "Indicates if completion of pre-class resources is required"
-                            }
-                        }
+                                "description": "Indicates if completion of pre-class resources is required",
+                            },
+                        },
                     },
                     "in_class": {
                         "bsonType": "object",
@@ -119,9 +177,7 @@ course_schema = {
                             "topics": {
                                 "bsonType": "array",
                                 "description": "List of topics covered in the session",
-                                "items": {
-                                    "bsonType": "string"
-                                }
+                                "items": {"bsonType": "string"},
                             },
                             "quiz": {
                                 "bsonType": "object",
@@ -129,17 +185,17 @@ course_schema = {
                                 "properties": {
                                     "title": {
                                         "bsonType": "string",
-                                        "description": "Title of the quiz"
+                                        "description": "Title of the quiz",
                                     },
                                     "questions": {
                                         "bsonType": "int",
-                                        "description": "Number of questions in the quiz"
+                                        "description": "Number of questions in the quiz",
                                     },
                                     "duration": {
                                         "bsonType": "int",
-                                        "description": "Duration of the quiz in minutes"
-                                    }
-                                }
+                                        "description": "Duration of the quiz in minutes",
+                                    },
+                                },
                             },
                             "polls": {
                                 "bsonType": "array",
@@ -150,26 +206,22 @@ course_schema = {
                                     "properties": {
                                         "question": {
                                             "bsonType": "string",
-                                            "description": "Poll question"
+                                            "description": "Poll question",
                                         },
                                         "options": {
                                             "bsonType": "array",
                                             "description": "List of poll options",
-                                            "items": {
-                                                "bsonType": "string"
-                                            }
+                                            "items": {"bsonType": "string"},
                                         },
                                         "responses": {
                                             "bsonType": "object",
                                             "description": "Responses to the poll",
-                                            "additionalProperties": {
-                                                "bsonType": "int"
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                                            "additionalProperties": {"bsonType": "int"},
+                                        },
+                                    },
+                                },
+                            },
+                        },
                     },
                     "post_class": {
                         "bsonType": "object",
@@ -184,51 +236,55 @@ course_schema = {
                                     "properties": {
                                         "id": {
                                             "bsonType": "int",
-                                            "description": "Assignment ID"
+                                            "description": "Assignment ID",
                                         },
                                         "title": {
                                             "bsonType": "string",
-                                            "description": "Title of the assignment"
+                                            "description": "Title of the assignment",
                                         },
                                         "due_date": {
                                             "bsonType": "date",
-                                            "description": "Due date of the assignment"
+                                            "description": "Due date of the assignment",
                                         },
                                         "status": {
                                             "bsonType": "string",
-                                            "description": "Status of the assignment (e.g., pending, completed)"
+                                            "description": "Status of the assignment (e.g., pending, completed)",
                                         },
                                         "submissions": {
                                             "bsonType": "array",
                                             "description": "List of submissions",
                                             "items": {
                                                 "bsonType": "object",
-                                                "required": ["student_id", "file_url", "submitted_at"],
+                                                "required": [
+                                                    "student_id",
+                                                    "file_url",
+                                                    "submitted_at",
+                                                ],
                                                 "properties": {
                                                     "student_id": {
                                                         "bsonType": "string",
-                                                        "description": "ID of the student who submitted the assignment"
+                                                        "description": "ID of the student who submitted the assignment",
                                                     },
                                                     "file_url": {
                                                         "bsonType": "string",
-                                                        "description": "URL of the submitted file"
+                                                        "description": "URL of the submitted file",
                                                     },
                                                     "submitted_at": {
                                                         "bsonType": "date",
-                                                        "description": "Date when the assignment was submitted"
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                                                        "description": "Date when the assignment was submitted",
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
                             }
-                        }
-                    }
-                }
-            }
-        }
-    }
+                        },
+                    },
+                },
+            },
+        },
+    },
 }
 
 # Create the collection with the schema
@@ -333,7 +389,7 @@ course_schema = {
 #         }
 #     ]
 # }
-courses_collection2 = db['courses_collection2']
+courses_collection2 = db["courses_collection2"]
 
 # courses_collection2.insert_one(sample_course)
 #  print("Sample course inserted successfully!")
@@ -355,29 +411,23 @@ users_schema = {
     "properties": {
         "user_id": {
             "bsonType": "string",
-            "description": "Unique identifier for the user"
+            "description": "Unique identifier for the user",
         },
-        "username": {
-            "bsonType": "string",
-            "description": "Name of the User"
-        },
-        "password": {
-            "bsonType": "string",
-            "description": "Password of the user"
-        },
+        "username": {"bsonType": "string", "description": "Name of the User"},
+        "password": {"bsonType": "string", "description": "Password of the user"},
         "role": {
             "bsonType": "string",
-            "description": "Type of user (e.g., student, faculty)"
+            "description": "Type of user (e.g., student, faculty)",
         },
         "created_at": {
             "bsonType": "date",
-            "description": "Date when the user was created"
-        }
-    }
+            "description": "Date when the user was created",
+        },
+    },
 }
 # Create the collection with the schema
 # db.create_collection("users", validator={"$jsonSchema": users_schema})
-users_collection = db['users']
+users_collection = db["users"]
 
 # sample_user = {
 #     "user_id": "U103",
@@ -396,15 +446,12 @@ student_schema = {
     "properties": {
         "SID": {
             "bsonType": "string",
-            "description": "Unique identifier for the student"
+            "description": "Unique identifier for the student",
         },
-        "full_name": {
-            "bsonType": "string",
-            "description": "Full name of the student"
-        },
+        "full_name": {"bsonType": "string", "description": "Full name of the student"},
         "password": {
             "bsonType": "string",
-            "description": "Hashed password of the student"
+            "description": "Hashed password of the student",
         },
         "enrolled_courses": {
             "bsonType": "array",
@@ -415,20 +462,20 @@ student_schema = {
                 "properties": {
                     "course_id": {
                         "bsonType": "string",
-                        "description": "Unique identifier for the course"
+                        "description": "Unique identifier for the course",
                     },
                     "title": {
                         "bsonType": "string",
-                        "description": "Title of the course"
-                    }
-                }
-            }
+                        "description": "Title of the course",
+                    },
+                },
+            },
         },
         "created_at": {
             "bsonType": "date",
-            "description": "Date when the student was created"
-        }
-    }
+            "description": "Date when the student was created",
+        },
+    },
 }
 # Defining the Faculty Collection
 faculty_schema = {
@@ -437,15 +484,12 @@ faculty_schema = {
     "properties": {
         "TID": {
             "bsonType": "string",
-            "description": "Unique identifier for the faculty"
+            "description": "Unique identifier for the faculty",
         },
-        "full_name": {
-            "bsonType": "string",
-            "description": "Full name of the faculty"
-        },
+        "full_name": {"bsonType": "string", "description": "Full name of the faculty"},
         "password": {
             "bsonType": "string",
-            "description": "Hashed password of the faculty"
+            "description": "Hashed password of the faculty",
         },
         "courses_taught": {
             "bsonType": "array",
@@ -456,27 +500,27 @@ faculty_schema = {
                 "properties": {
                     "course_id": {
                         "bsonType": "string",
-                        "description": "Unique identifier for the course"
+                        "description": "Unique identifier for the course",
                     },
                     "title": {
                         "bsonType": "string",
-                        "description": "Title of the course"
-                    }
-                }
-            }
+                        "description": "Title of the course",
+                    },
+                },
+            },
         },
         "created_at": {
             "bsonType": "date",
-            "description": "Date when the faculty was created"
-        }
-    }
+            "description": "Date when the faculty was created",
+        },
+    },
 }
 # Creating the Collections
 # db.create_collection("students", validator={"$jsonSchema": student_schema})
 # db.create_collection("faculty", validator={"$jsonSchema": faculty_schema})
 
-students_collection = db['students']
-faculty_collection = db['faculty']
+students_collection = db["students"]
+faculty_collection = db["faculty"]
 
 # Inserting Sample Student Data
 # sample_student = {
@@ -511,25 +555,24 @@ vector_schema = {
     "properties": {
         "resource_id": {
             "bsonType": "objectId",
-            "description": "Unique identifier for the resource"
+            "description": "Unique identifier for the resource",
         },
         "vector": {
             "bsonType": "array",
             "description": "Vector representation of the resource",
-            "items": {
-                "bsonType": "double"
-            }
+            "items": {"bsonType": "double"},
         },
-        "text": {
-            "bsonType": "string",
-            "description": "Text content of the resource"
-        },
+        "text": {"bsonType": "string", "description": "Text content of the resource"},
         "created_at": {
             "bsonType": "date",
-            "description": "Date when the vector was created"
-        }
-    }
+            "description": "Date when the vector was created",
+        },
+    },
 }
 # Creating the Vector Collection
 # db.create_collection("vectors", validator={"$jsonSchema": vector_schema})
-vectors_collection = db['vectors']
+vectors_collection = db["vectors"]
+
+
+if __name__ == "__main__":
+    insert_sample_research_assistants()
