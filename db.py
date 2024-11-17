@@ -1,0 +1,535 @@
+# Setup for MongoDB
+from pymongo import MongoClient
+from datetime import datetime
+from werkzeug.security import generate_password_hash
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+MONGO_URI = os.getenv('MONGO_URI')
+
+client = MongoClient(MONGO_URI)
+try:
+    client.admin.command('ping')
+    print("MongoDB connection successful")
+except Exception as e:
+    print(f"MongoDB connection failed: {e}")
+
+db = client['novascholar_db']
+
+# Define the course schema
+course_schema = {
+    "bsonType": "object",
+    "required": ["course_id", "title", "description", "faculty", "faculty_id", "duration", "created_at"],
+    "properties": {
+        "course_id": {
+            "bsonType": "string",
+            "description": "Unique identifier for the course"
+        },
+        "title": {
+            "bsonType": "string",
+            "description": "Title of the course"
+        },
+        "description": {
+            "bsonType": "string",
+            "description": "Description of the course"
+        },
+        "faculty": {
+            "bsonType": "string",
+            "description": "Name of the faculty"
+        },
+        "duration": {
+            "bsonType": "string",
+            "description": "Duration of the course"
+        },
+        "created_at": {
+            "bsonType": "date",
+            "description": "Date when the course was created"
+        },
+        "sessions": {
+            "bsonType": "array",
+            "description": "List of sessions associated with the course",
+            "items": {
+                "bsonType": "object",
+                "required": ["session_id", "title", "date", "status", "created_at"],
+                "properties": {
+                    "session_id": {
+                        "bsonType": "string",
+                        "description": "Unique identifier for the session"
+                    },
+                    "title": {
+                        "bsonType": "string",
+                        "description": "Title of the session"
+                    },
+                    "date": {
+                        "bsonType": "date",
+                        "description": "Date of the session"
+                    },
+                    "status": {
+                        "bsonType": "string",
+                        "description": "Status of the session (e.g., completed, upcoming)"
+                    },
+                    "created_at": {
+                        "bsonType": "date",
+                        "description": "Date when the session was created"
+                    },
+                    "pre_class": {
+                        "bsonType": "object",
+                        "description": "Pre-class segment data",
+                        "properties": {
+                            "resources": {
+                                "bsonType": "array",
+                                "description": "List of pre-class resources",
+                                "items": {
+                                    "bsonType": "object",
+                                    "required": ["type", "title", "url"],
+                                    "properties": {
+                                        "type": {
+                                            "bsonType": "string",
+                                            "description": "Type of resource (e.g., pdf, video)"
+                                        },
+                                        "title": {
+                                            "bsonType": "string",
+                                            "description": "Title of the resource"
+                                        },
+                                        "url": {
+                                            "bsonType": "string",
+                                            "description": "URL of the resource"
+                                        },
+                                        "vector": {
+                                            "bsonType": "array",
+                                            "description": "Vector representation of the resource",
+                                            "items": {
+                                                "bsonType": "double"
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "completion_required": {
+                                "bsonType": "bool",
+                                "description": "Indicates if completion of pre-class resources is required"
+                            }
+                        }
+                    },
+                    "in_class": {
+                        "bsonType": "object",
+                        "description": "In-class segment data",
+                        "properties": {
+                            "topics": {
+                                "bsonType": "array",
+                                "description": "List of topics covered in the session",
+                                "items": {
+                                    "bsonType": "string"
+                                }
+                            },
+                            "quiz": {
+                                "bsonType": "object",
+                                "description": "Quiz data",
+                                "properties": {
+                                    "title": {
+                                        "bsonType": "string",
+                                        "description": "Title of the quiz"
+                                    },
+                                    "questions": {
+                                        "bsonType": "int",
+                                        "description": "Number of questions in the quiz"
+                                    },
+                                    "duration": {
+                                        "bsonType": "int",
+                                        "description": "Duration of the quiz in minutes"
+                                    }
+                                }
+                            },
+                            "polls": {
+                                "bsonType": "array",
+                                "description": "List of polls conducted during the session",
+                                "items": {
+                                    "bsonType": "object",
+                                    "required": ["question", "options"],
+                                    "properties": {
+                                        "question": {
+                                            "bsonType": "string",
+                                            "description": "Poll question"
+                                        },
+                                        "options": {
+                                            "bsonType": "array",
+                                            "description": "List of poll options",
+                                            "items": {
+                                                "bsonType": "string"
+                                            }
+                                        },
+                                        "responses": {
+                                            "bsonType": "object",
+                                            "description": "Responses to the poll",
+                                            "additionalProperties": {
+                                                "bsonType": "int"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "post_class": {
+                        "bsonType": "object",
+                        "description": "Post-class segment data",
+                        "properties": {
+                            "assignments": {
+                                "bsonType": "array",
+                                "description": "List of assignments",
+                                "items": {
+                                    "bsonType": "object",
+                                    "required": ["id", "title", "due_date", "status"],
+                                    "properties": {
+                                        "id": {
+                                            "bsonType": "int",
+                                            "description": "Assignment ID"
+                                        },
+                                        "title": {
+                                            "bsonType": "string",
+                                            "description": "Title of the assignment"
+                                        },
+                                        "due_date": {
+                                            "bsonType": "date",
+                                            "description": "Due date of the assignment"
+                                        },
+                                        "status": {
+                                            "bsonType": "string",
+                                            "description": "Status of the assignment (e.g., pending, completed)"
+                                        },
+                                        "submissions": {
+                                            "bsonType": "array",
+                                            "description": "List of submissions",
+                                            "items": {
+                                                "bsonType": "object",
+                                                "required": ["student_id", "file_url", "submitted_at"],
+                                                "properties": {
+                                                    "student_id": {
+                                                        "bsonType": "string",
+                                                        "description": "ID of the student who submitted the assignment"
+                                                    },
+                                                    "file_url": {
+                                                        "bsonType": "string",
+                                                        "description": "URL of the submitted file"
+                                                    },
+                                                    "submitted_at": {
+                                                        "bsonType": "date",
+                                                        "description": "Date when the assignment was submitted"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+# Create the collection with the schema
+# db.create_collection("courses_collection2", validator={"$jsonSchema": course_schema})
+
+# sample_course = {
+#     "course_id": "CS101",
+#     "title": "Introduction to Computer Science",
+#     "description": "This course covers the basics of computer science and programming.",
+#     "faculty": "Dr. John Doe",
+#     "faculty_id": "F101",
+#     "duration": "10 weeks",
+#     "created_at": datetime.utcnow(),
+#     "sessions": [
+#         {
+#             "session_id": "S101",
+#             "title": "Introduction to Programming Fundamentals",
+#             "date": datetime.utcnow() - timedelta(days=7),
+#             "status": "completed",
+#             "created_at": datetime.utcnow() - timedelta(days=7),
+#             "pre_class": {
+#                 "resources": [
+#                     {
+#                         "type": "pdf",
+#                         "title": "Introduction to Python Basics",
+#                         "url": "/assets/python_basics.pdf",
+#                         "vector": [0.1, 0.2, 0.3]  # Example vector
+#                     }
+#                 ],
+#                 "completion_required": True
+#             },
+#             "in_class": {
+#                 "topics": ["Variables", "Data Types", "Basic Operations"],
+#                 "quiz": {
+#                     "title": "Python Basics Quiz",
+#                     "questions": 5,
+#                     "duration": 15
+#                 },
+#                 "polls": [
+#                     {
+#                         "question": "How comfortable are you with Python syntax?",
+#                         "options": ["Very", "Somewhat", "Not at all"],
+#                         "responses": {"Very": 10, "Somewhat": 5, "Not at all": 2}
+#                     }
+#                 ]
+#             },
+#             "post_class": {
+#                 "assignments": [
+#                     {
+#                         "id": 1,
+#                         "title": "Basic Python Programs",
+#                         "due_date": datetime.utcnow() + timedelta(days=2),
+#                         "status": "pending",
+#                         "submissions": []
+#                     }
+#                 ]
+#             }
+#         },
+#         {
+#             "session_id": "S102",
+#             "title": "Control Flow and Functions",
+#             "date": datetime.utcnow() - timedelta(days=3),
+#             "status": "completed",
+#             "created_at": datetime.utcnow() - timedelta(days=3),
+#             "pre_class": {
+#                 "resources": [
+#                     {
+#                         "type": "pdf",
+#                         "title": "Control Flow in Python",
+#                         "url": "/assets/control_flow.pdf",
+#                         "vector": [0.4, 0.5, 0.6]  # Example vector
+#                     }
+#                 ],
+#                 "completion_required": True
+#             },
+#             "in_class": {
+#                 "topics": ["If-else statements", "Loops", "Function definitions"],
+#                 "quiz": {
+#                     "title": "Control Flow Quiz",
+#                     "questions": 8,
+#                     "duration": 20
+#                 },
+#                 "polls": [
+#                     {
+#                         "question": "Which loop type do you find more intuitive?",
+#                         "options": ["For loops", "While loops", "Both"],
+#                         "responses": {"For loops": 12, "While loops": 8, "Both": 10}
+#                     }
+#                 ]
+#             },
+#             "post_class": {
+#                 "assignments": [
+#                     {
+#                         "id": 2,
+#                         "title": "Function Implementation Exercise",
+#                         "due_date": datetime.utcnow() + timedelta(days=4),
+#                         "status": "pending",
+#                         "submissions": []
+#                     }
+#                 ]
+#             }
+#         }
+#     ]
+# }
+courses_collection2 = db['courses_collection2']
+
+# courses_collection2.insert_one(sample_course)
+#  print("Sample course inserted successfully!")
+
+
+# sessions_collection.insert_one(session_data)
+# sessions_collection.delete_one({"session_id": "S101"})
+
+# course_id = "C101"
+# sessions = sessions_collection.find({"course_id": course_id})
+# for session in sessions:
+#     print(session)
+
+
+# Define the users schema
+users_schema = {
+    "bsonType": "object",
+    "required": ["user_id", "username", "password", "role", "created_at"],
+    "properties": {
+        "user_id": {
+            "bsonType": "string",
+            "description": "Unique identifier for the user"
+        },
+        "username": {
+            "bsonType": "string",
+            "description": "Name of the User"
+        },
+        "password": {
+            "bsonType": "string",
+            "description": "Password of the user"
+        },
+        "role": {
+            "bsonType": "string",
+            "description": "Type of user (e.g., student, faculty)"
+        },
+        "created_at": {
+            "bsonType": "date",
+            "description": "Date when the user was created"
+        }
+    }
+}
+# Create the collection with the schema
+# db.create_collection("users", validator={"$jsonSchema": users_schema})
+users_collection = db['users']
+
+# sample_user = {
+#     "user_id": "U103",
+#     "username": "Yash Desai",
+#     "password": generate_password_hash("yash"),
+#     "role": "Faculty",
+#     "created_at": datetime.utcnow()
+# }
+# users_collection.insert_one(sample_user)
+# print("Sample user inserted successfully!")
+
+# Defining the Student Collection
+student_schema = {
+    "bsonType": "object",
+    "required": ["SID", "full_name", "password", "enrolled_courses", "created_at"],
+    "properties": {
+        "SID": {
+            "bsonType": "string",
+            "description": "Unique identifier for the student"
+        },
+        "full_name": {
+            "bsonType": "string",
+            "description": "Full name of the student"
+        },
+        "password": {
+            "bsonType": "string",
+            "description": "Hashed password of the student"
+        },
+        "enrolled_courses": {
+            "bsonType": "array",
+            "description": "List of courses the student is enrolled in",
+            "items": {
+                "bsonType": "object",
+                "required": ["course_id", "title"],
+                "properties": {
+                    "course_id": {
+                        "bsonType": "string",
+                        "description": "Unique identifier for the course"
+                    },
+                    "title": {
+                        "bsonType": "string",
+                        "description": "Title of the course"
+                    }
+                }
+            }
+        },
+        "created_at": {
+            "bsonType": "date",
+            "description": "Date when the student was created"
+        }
+    }
+}
+# Defining the Faculty Collection
+faculty_schema = {
+    "bsonType": "object",
+    "required": ["TID", "full_name", "password", "courses_taught", "created_at"],
+    "properties": {
+        "TID": {
+            "bsonType": "string",
+            "description": "Unique identifier for the faculty"
+        },
+        "full_name": {
+            "bsonType": "string",
+            "description": "Full name of the faculty"
+        },
+        "password": {
+            "bsonType": "string",
+            "description": "Hashed password of the faculty"
+        },
+        "courses_taught": {
+            "bsonType": "array",
+            "description": "List of courses the faculty is teaching",
+            "items": {
+                "bsonType": "object",
+                "required": ["course_id", "title"],
+                "properties": {
+                    "course_id": {
+                        "bsonType": "string",
+                        "description": "Unique identifier for the course"
+                    },
+                    "title": {
+                        "bsonType": "string",
+                        "description": "Title of the course"
+                    }
+                }
+            }
+        },
+        "created_at": {
+            "bsonType": "date",
+            "description": "Date when the faculty was created"
+        }
+    }
+}
+# Creating the Collections
+# db.create_collection("students", validator={"$jsonSchema": student_schema})
+# db.create_collection("faculty", validator={"$jsonSchema": faculty_schema})
+
+students_collection = db['students']
+faculty_collection = db['faculty']
+
+# Inserting Sample Student Data
+# sample_student = {
+#     "SID": "S102",
+#     "full_name": "Omkar Surve",
+#     "password": generate_password_hash("omkar"),
+#     "enrolled_courses": [
+#         {"course_id": "CS101", "title": "Introduction to Computer Science"}
+#     ],
+#     "created_at": datetime.utcnow()
+# }
+# # students_collection.insert_one(sample_student)
+# print("Sample student inserted successfully!")
+
+# Inserting Sample Faculty Data
+# sample_faculty = {
+#     "TID": "F101",
+#     "full_name": "Dr. John Doe",
+#     "password": generate_password_hash("john"),
+#     "courses_taught": [
+#         {"course_id": "CS101", "title": "Introduction to Computer Science"}
+#     ],
+#     "created_at": datetime.utcnow()
+# }
+# faculty_collection.insert_one(sample_faculty)
+# print("Sample faculty inserted successfully!")
+
+# Defining the Vector Collection Schema
+vector_schema = {
+    "bsonType": "object",
+    "required": ["resource_id", "vector"],
+    "properties": {
+        "resource_id": {
+            "bsonType": "objectId",
+            "description": "Unique identifier for the resource"
+        },
+        "vector": {
+            "bsonType": "array",
+            "description": "Vector representation of the resource",
+            "items": {
+                "bsonType": "double"
+            }
+        },
+        "text": {
+            "bsonType": "string",
+            "description": "Text content of the resource"
+        },
+        "created_at": {
+            "bsonType": "date",
+            "description": "Date when the vector was created"
+        }
+    }
+}
+# Creating the Vector Collection
+# db.create_collection("vectors", validator={"$jsonSchema": vector_schema})
+vectors_collection = db['vectors']
