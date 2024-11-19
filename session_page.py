@@ -8,6 +8,17 @@ from db import courses_collection2, chat_history_collection, students_collection
 from chatbot import insert_chat_message
 from bson import ObjectId
 from live_polls import LivePollFeature
+import pandas as pd
+import plotly.express as px
+from dotenv import load_dotenv
+import os
+from pymongo import MongoClient
+
+load_dotenv()
+MONGO_URI = os.getenv('MONGO_URI')
+client = MongoClient(MONGO_URI)
+db = client["novascholar_db"]
+polls_collection = db["polls"]
 
 def get_current_user():
     if 'current_user' not in st.session_state:
@@ -17,37 +28,6 @@ def get_current_user():
 def display_preclass_content(session, student_id):
     """Display pre-class materials for a session"""
     st.subheader("Pre-class Materials")
-    
-    # Display progress bar
-    # progress = SAMPLE_STUDENT_PROGRESS.get(st.session_state.username, {}).get(session['session_id'], {}).get('pre_class', 0)
-    # display_progress_bar(progress, 100, "Pre-class completion")
-
-    # for resource in session['pre_class']['resources']:
-    #     with st.expander(f"{resource['title']} ({resource['type'].upper()})"):
-    #         if resource['type'] == 'pdf':
-    #             st.markdown(f"📑 [Open PDF Document]({resource['url']})")
-    #             if st.button("Mark PDF as Read", key=f"pdf_{resource['title']}"):
-    #                 create_notification("PDF marked as read!", "success")
-                    
-    #         elif resource['type'] == 'video':
-    #             st.markdown(f"🎥 Video Duration: {resource['duration']}")
-    #             col1, col2 = st.columns([3, 1])
-    #             with col1:
-    #                 st.video("https://example.com/placeholder.mp4")
-    #             with col2:
-    #                 if st.button("Mark Video Complete", key=f"video_{resource['title']}"):
-    #                     create_notification("Video marked as complete!", "success")
-                        
-    #         elif resource['type'] == 'reading':
-    #             st.markdown(f"📖 Reading Assignment: Pages {resource['pages']}")
-    #             if st.button("Mark Reading Complete", key=f"reading_{resource['title']}"):
-    #                 create_notification("Reading marked as complete!", "success")
-            
-    #         st.markdown("---")
-    #         st.markdown("**Notes:**")
-    #         notes = st.text_area("Add your notes here", key=f"notes_{resource['title']}")
-    #         if st.button("Save Notes", key=f"save_notes_{resource['title']}"):
-    #             create_notification("Notes saved successfully!", "success")
 
     # Display pre-class materials
     print(f"student_id: {type(student_id)}")
@@ -229,102 +209,412 @@ def display_post_class_content(session, student_id, course_id):
                 st.success("Assignment added successfully!")
     else:
         # Display assignments
-        # assignments += courses_collection2.find_one(
-        #     {"course_id": course_id, "sessions.session_id": session['session_id']},
-        #     {"sessions.$.post_class.assignments": 1}
-        # )["sessions"][0]["post_class"]["assignments"]
         session_data = courses_collection2.find_one(
             {"course_id": course_id, "sessions.session_id": session['session_id']},
             {"sessions.$": 1}
         )
-        assignments = session_data["sessions"][0]["post_class"]["assignments"]
-        print(assignments)
-        for assignment in assignments:
-            with st.expander(f"Assignment: {assignment['title']}", expanded=True):
-                st.markdown(f"**Due Date:** {assignment['due_date']}")
-                st.markdown(f"**Status:** {assignment['status'].replace('_', ' ').title()}")
-                
-                # Assignment details
-                st.markdown("### Instructions")
-                st.markdown("Complete the assignment according to the provided guidelines.")
-                
-                # File submission
-                st.markdown("### Submission")
-                uploaded_file = st.file_uploader(
-                    "Upload your work",
-                    type=['pdf', 'py', 'ipynb'],
-                    key=f"upload_{assignment['id']}"
-                )
-                
-                if uploaded_file is not None:
-                    st.success("File uploaded successfully!")
+        
+        if session_data and "sessions" in session_data and len(session_data["sessions"]) > 0:
+            assignments = session_data["sessions"][0].get("post_class", {}).get("assignments", [])
+            for assignment in assignments:
+                title = assignment.get("title", "No Title")
+                due_date = assignment.get("due_date", "No Due Date")
+                status = assignment.get("status", "No Status")
+                assignment_id = assignment.get("id", "No ID")
 
-                    if st.button("Submit Assignment", key=f"submit_{assignment['id']}"):
-                        # Save the file to a location and get the file URL
-                        assignment_submit(student_id, course_id, session['session_id'], uploaded_file.name, uploaded_file, uploaded_file.type)
+                with st.expander(f"Assignment: {title}", expanded=True):
+                    st.markdown(f"**Due Date:** {due_date}")
+                    st.markdown(f"**Status:** {status.replace('_', ' ').title()}")
+                    
+                    # Assignment details
+                    st.markdown("### Instructions")
+                    st.markdown("Complete the assignment according to the provided guidelines.")
+                    
+                    # File submission
+                    st.markdown("### Submission")
+                    uploaded_file = st.file_uploader(
+                        "Upload your work",
+                        type=['pdf', 'py', 'ipynb'],
+                        key=f"upload_{assignment['id']}"
+                    )
+                    
+                    if uploaded_file is not None:
+                        st.success("File uploaded successfully!")
+
+                        # if st.button("Submit Assignment", key=f"submit_{assignment['id']}"):
+                        #     assignment_submit(student_id, course_id, session['session_id'], assignment_id, uploaded_file.name, uploaded_file, uploaded_file.type)
+                        if st.button("Submit Assignment", key=f"submit_{assignment['id']}"):
+                            # Extract text content from the file
+                            text_content = extract_text_from_file(uploaded_file)
+                            
+                            # Call assignment_submit function
+                            success = assignment_submit(
+                                student_id=student_id,
+                                course_id=course_id,
+                                session_id=session['session_id'],
+                                assignment_id=assignment['id'],
+                                file_name=uploaded_file.name,
+                                file_content=uploaded_file,
+                                text_content=text_content,
+                                material_type="assignment"
+                            )
+                            
+                            if success:
+                                st.success("Assignment submitted successfully!")
+                            else:
+                                st.error("Error saving submission.")
+                    # Feedback section (if assignment is completed)
+                    if assignment['status'] == 'completed':
+                        st.markdown("### Feedback")
+                        st.info("Feedback will be provided here once the assignment is graded.")
+        else:
+            st.warning("No assignments found for this session.")            
                 
-                        # Display submitted assignments
-                        st.markdown(f"📑 [Click to view Submission]({uploaded_file['file_name']})")
-                        if st.button("View PDF", key=f"view_pdf_{uploaded_file['file_name']}"):
-                            st.text_area("PDF Content", uploaded_file['text_content'], height=300)
-                        if st.button("Download PDF", key=f"download_pdf_{uploaded_file['file_name']}"):
-                            st.download_button(
-                                label="Download PDF",
-                                data=uploaded_file['file_content'],
-                                file_name=uploaded_file['file_name'],
-                                mime='application/pdf'
-                        )
-
-                # Feedback section (if assignment is completed)
-                if assignment['status'] == 'completed':
-                    st.markdown("### Feedback")
-                    st.info("Feedback will be provided here once the assignment is graded.")
-                
-                
-
-
-
-
-def display_preclass_analytics(session):
-    """Display pre-class analytics for faculty"""
+def display_preclass_analytics(session, course_id):
+    """Display pre-class analytics for faculty based on chat interaction metrics"""
     st.subheader("Pre-class Analytics")
     
-    # Display pre-class resource completion rates
-    for resource in session['pre_class']['resources']:
-        progress = SAMPLE_STUDENT_PROGRESS.get(resource['title'], 0)
-        display_progress_bar(progress, 100, resource['title'])
+    # Get all enrolled students
+    # enrolled_students = list(students_collection.find({"enrolled_courses": session['course_id']}))
+    enrolled_students = list(students_collection.find({
+        "enrolled_courses.course_id": course_id
+    }))
+    # total_students = len(enrolled_students)
+    
+    total_students = students_collection.count_documents({
+        "enrolled_courses": {
+            "$elemMatch": {"course_id": course_id}
+        }
+    })
 
-def display_inclass_analytics(session):
+
+    if total_students == 0:
+        st.warning("No students enrolled in this course.")
+        return
+    
+    # Get chat history for all students in this session
+    chat_data = list(chat_history_collection.find({
+        "session_id": session['session_id']
+    }))
+    
+    # Create a DataFrame to store student completion data
+    completion_data = []
+    incomplete_students = []
+    
+    for student in enrolled_students:
+        student_id = student['_id']
+        student_name = student.get('full_name', 'Unknown')
+        student_sid = student.get('SID', 'Unknown')
+        
+        # Find student's chat history
+        student_chat = next((chat for chat in chat_data if chat['user_id'] == student_id), None)
+        
+        if student_chat:
+            message_count = len(student_chat.get('messages', []))
+            status = "Completed" if message_count >= 20 else "Incomplete"
+            if status == "Incomplete":
+                incomplete_students.append({
+                    'name': student_name,
+                    'sid': student_sid,
+                    'message_count': message_count
+                })
+        else:
+            message_count = 0
+            status = "Not Started"
+            incomplete_students.append({
+                'name': student_name,
+                'sid': student_sid,
+                'message_count': 0
+            })
+            
+        completion_data.append({
+            'Student Name': student_name,
+            'SID': student_sid,
+            'Messages': message_count,
+            'Status': status
+        })
+    
+    # Create DataFrame
+    df = pd.DataFrame(completion_data)
+    
+    # Display summary metrics
+    col1, col2, col3 = st.columns(3)
+    
+    completed_count = len(df[df['Status'] == 'Completed'])
+    incomplete_count = len(df[df['Status'] == 'Incomplete'])
+    not_started_count = len(df[df['Status'] == 'Not Started'])
+    
+    with col1:
+        st.metric("Completed", completed_count)
+    with col2:
+        st.metric("Incomplete", incomplete_count)
+    with col3:
+        st.metric("Not Started", not_started_count)
+    
+    # Display completion rate progress bar
+    completion_rate = (completed_count / total_students) * 100
+    st.markdown("### Overall Completion Rate")
+    st.progress(completion_rate / 100)
+    st.markdown(f"**{completion_rate:.1f}%** of students have completed pre-class materials")
+    
+    # Display full student completion table
+    st.markdown("### Student Completion Details")
+    st.dataframe(
+        df.style.apply(lambda x: ['background-color: #90EE90' if v == 'Completed' 
+                                 else 'background-color: #FFB6C1' if v == 'Incomplete'
+                                 else 'background-color: #FFE4B5' 
+                                 for v in x],
+                      subset=['Status'])
+    )
+    
+    # Display students who haven't completed
+    if incomplete_students:
+        st.markdown("### Students Requiring Follow-up")
+        incomplete_df = pd.DataFrame(incomplete_students)
+        st.markdown(f"**{len(incomplete_students)} students** need to complete the pre-class materials:")
+        
+        # Create a styled table for incomplete students
+        st.table(
+            incomplete_df.style.apply(lambda x: ['background-color: #FFFFFF' 
+                                               for _ in range(len(x))]))
+        
+        # Export option for incomplete students list
+        csv = incomplete_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "Download Follow-up List",
+            csv,
+            "incomplete_students.csv",
+            "text/csv",
+            key='download-csv'
+        )
+
+def display_inclass_analytics(session, course_id):
     """Display in-class analytics for faculty"""
     st.subheader("In-class Analytics")
     
-    # Display chat usage metrics
-    chat_messages = SAMPLE_CHAT_HISTORY.get(session['session_id'], [])
-    st.metric("Total Chat Messages", len(chat_messages))
+    # Get all enrolled students count for participation rate calculation
+    total_students = students_collection.count_documents({
+        "enrolled_courses": {
+            "$elemMatch": {"course_id": course_id}
+        }
+    })
     
-    # Display live quiz/poll results
-    # for poll in session['in_class']['polls']:
-    #     st.subheader(poll['question'])
-    #     for option, count in poll['responses'].items():
-    #         st.metric(option, count)
-    for poll in session.get('in_class', {}).get('polls', []):
-        st.text(poll.get('question', 'No question available'))
-        responses = poll.get('responses', {})
-        if responses:
-            for option, count in responses.items():
-                st.metric(option, count)
-        else:
-            st.warning("No responses available for this poll")
+    if total_students == 0:
+        st.warning("No students enrolled in this course.")
+        return
+    
+    # Get all polls for this session
+    polls = polls_collection.find({
+        "session_id": session['session_id']
+    })
+    
+    polls_list = list(polls)
+    if not polls_list:
+        st.warning("No polls have been conducted in this session yet.")
+        return
+    
+    # Overall Poll Participation Metrics
+    st.markdown("### Overall Poll Participation")
+    
+    # Calculate overall participation metrics
+    total_polls = len(polls_list)
+    participating_students = set()
+    poll_participation_data = []
+    
+    for poll in polls_list:
+        respondents = set(poll.get('respondents', []))
+        participating_students.update(respondents)
+        poll_participation_data.append({
+            'Poll Title': poll.get('question', 'Untitled Poll'),
+            'Respondents': len(respondents),
+            'Participation Rate': (len(respondents) / total_students * 100)
+        })
+    
+    # Display summary metrics
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Polls Conducted", total_polls)
+    with col2:
+        st.metric("Active Participants", len(participating_students))
+    with col3:
+        avg_participation = sum(p['Participation Rate'] for p in poll_participation_data) / total_polls
+        st.metric("Average Participation Rate", f"{avg_participation:.1f}%")
+    
+    # Participation Trend Graph
+    # st.markdown("### Poll Participation Trends")
+    # participation_df = pd.DataFrame(poll_participation_data)
+    
+    # # Create line chart for participation trends
+    # fig = px.line(participation_df, 
+    #               x='Poll Title', 
+    #               y='Participation Rate',
+    #               title='Poll Participation Rates Over Time',
+    #               markers=True)
+    # fig.update_layout(
+    #     xaxis_title="Polls",
+    #     yaxis_title="Participation Rate (%)",
+    #     yaxis_range=[0, 100]
+    # )
+    # st.plotly_chart(fig)
+    
+    # Individual Poll Results
+    st.markdown("### Individual Poll Results")
+    
+    for poll in polls_list:
+        with st.expander(f"📊 {poll.get('question', 'Untitled Poll')}"):
+            responses = poll.get('responses', {})
+            respondents = poll.get('respondents', [])
+            
+            # Calculate metrics for this poll
+            response_count = len(respondents)
+            participation_rate = (response_count / total_students) * 100
+            
+            # Display poll metrics
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Total Responses", response_count)
+            with col2:
+                st.metric("Participation Rate", f"{participation_rate:.1f}%")
+            
+            if responses:
+                # Create DataFrame for responses
+                response_df = pd.DataFrame(list(responses.items()), 
+                                         columns=['Option', 'Votes'])
+                response_df['Percentage'] = (response_df['Votes'] / response_df['Votes'].sum() * 100).round(1)
+                
+                # Display response distribution
+                fig = px.bar(response_df, 
+                           x='Option', 
+                           y='Votes',
+                           title='Response Distribution',
+                           text='Percentage')
+                fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+                st.plotly_chart(fig)
+                
+                # Display detailed response table
+                st.markdown("#### Detailed Response Breakdown")
+                response_df['Percentage'] = response_df['Percentage'].apply(lambda x: f"{x}%")
+                st.table(response_df)
+            
+            # Non-participating students
+            non_participants = list(students_collection.find({
+                "courses": course_id,
+                "_id": {"$nin": respondents}
+            }))
+            
+            
 
-def display_postclass_analytics(session):
+
+            if non_participants:
+                st.markdown("#### Students Who Haven't Participated")
+                non_participant_data = [{
+                    'Name': student.get('name', 'Unknown'),
+                    'SID': student.get('sid', 'Unknown')
+                } for student in non_participants]
+                st.table(pd.DataFrame(non_participant_data))
+    
+    # Export functionality for participation data
+    st.markdown("### Export Analytics")
+    
+    if st.button("Download Poll Analytics Report"):
+        # Create a more detailed DataFrame for export
+        export_data = []
+        for poll in polls_list:
+            poll_data = {
+                'Poll Question': poll.get('question', 'Untitled'),
+                'Total Responses': len(poll.get('respondents', [])),
+                'Participation Rate': f"{(len(poll.get('respondents', [])) / total_students * 100):.1f}%"
+            }
+            # Add response distribution
+            for option, votes in poll.get('responses', {}).items():
+                poll_data[f"Option: {option}"] = votes
+            export_data.append(poll_data)
+        
+        export_df = pd.DataFrame(export_data)
+        csv = export_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "📥 Download Complete Report",
+            csv,
+            "poll_analytics.csv",
+            "text/csv",
+            key='download-csv'
+        )
+    
+
+def display_postclass_analytics(session, course_id):
     """Display post-class analytics for faculty"""
     st.subheader("Post-class Analytics")
     
-    # # Display assignment completion rates
-    # for assignment in session['post_class']['assignments']:
-    #     progress = SAMPLE_STUDENT_PROGRESS.get(assignment['id'], 0)
-    #     display_progress_bar(progress, 100, assignment['title'])
-
+    # Get all assignments for this session
+    session_data = courses_collection2.find_one(
+        {"sessions.session_id": session['session_id']},
+        {"sessions.$": 1}
+    )
+    
+    if not session_data or 'sessions' not in session_data:
+        st.warning("No assignments found for this session.")
+        return
+    
+    assignments = session_data['sessions'][0].get('post_class', {}).get('assignments', [])
+    
+    for assignment in assignments:
+        with st.expander(f"📝 Assignment: {assignment.get('title', 'Untitled')}"):
+            # Get submission analytics
+            submissions = assignment.get('submissions', [])
+            # total_students = students_collection.count_documents({"courses": session['course_id']})
+            total_students = students_collection.count_documents({
+                "enrolled_courses": {
+                    "$elemMatch": {"course_id": course_id}
+                }
+            })
+            # Calculate submission metrics
+            submitted_count = len(submissions)
+            submission_rate = (submitted_count / total_students) * 100 if total_students > 0 else 0
+            
+            # Display metrics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Submissions Received", submitted_count)
+            with col2:
+                st.metric("Submission Rate", f"{submission_rate:.1f}%")
+            with col3:
+                st.metric("Pending Submissions", total_students - submitted_count)
+            
+            # Display submission timeline
+            if submissions:
+                submission_dates = [sub.get('submitted_at') for sub in submissions if 'submitted_at' in sub]
+                if submission_dates:
+                    df = pd.DataFrame(submission_dates, columns=['Submission Date'])
+                    fig = px.histogram(df, x='Submission Date', 
+                                     title='Submission Timeline',
+                                     labels={'Submission Date': 'Date', 'count': 'Number of Submissions'})
+                    st.plotly_chart(fig)
+            
+            # Display submission status breakdown
+            status_counts = {
+                'pending': total_students - submitted_count,
+                'submitted': submitted_count,
+                'late': len([sub for sub in submissions if sub.get('is_late', False)])
+            }
+            
+            st.markdown("### Submission Status Breakdown")
+            status_df = pd.DataFrame(list(status_counts.items()), 
+                                   columns=['Status', 'Count'])
+            st.bar_chart(status_df.set_index('Status'))
+            
+            # List of students who haven't submitted
+            if status_counts['pending'] > 0:
+                st.markdown("### Students with Pending Submissions")
+                # submitted_ids = [sub.get('student_id') for sub in submissions]
+                submitted_ids = [ObjectId(sub.get('student_id')) for sub in submissions]
+                print(submitted_ids)
+                pending_students = students_collection.find({
+                    "enrolled_courses.course_id": course_id,
+                    "_id": {"$nin": submitted_ids}
+                })
+                print(pending_students)
+                for student in pending_students:
+                    st.markdown(f"- {student.get('full_name', 'Unknown Student')} (SID: {student.get('SID', 'Unknown SID')})")
 
 def upload_preclass_materials(session_id, course_id):
     """Upload pre-class materials for a session"""
@@ -359,7 +649,20 @@ def upload_preclass_materials(session_id, course_id):
 
 def display_session_content(student_id, course_id, session, username, user_type):
     st.title(f"Session {session['session_id']}: {session['title']}")
-    st.markdown(f"**Date:** {format_datetime(session['date'])}")
+    # st.markdown(f"**Date:** {format_datetime(session['date'])}")
+
+    # Convert date string to datetime object
+    # session_date = datetime.fromisoformat(session['date'])
+    # st.markdown(f"**Date:** {format_datetime(session_date)}")
+
+    # Check if the date is a string or a datetime object
+    if isinstance(session['date'], str):
+        # Convert date string to datetime object
+        session_date = datetime.fromisoformat(session['date'])
+    else:
+        session_date = session['date']
+
+    st.markdown(f"**Date:** {format_datetime(session_date)}")
     st.markdown(f"**Status:** {session['status'].replace('_', ' ').title()}")
     
     # Find the course_id of the session in 
@@ -402,8 +705,8 @@ def display_session_content(student_id, course_id, session, username, user_type)
         with post_class_work:
             display_post_class_content(session, student_id, course_id)
         with preclass_analytics:
-            display_preclass_analytics(session)
+            display_preclass_analytics(session, course_id)
         with inclass_analytics:
-            display_inclass_analytics(session)
+            display_inclass_analytics(session, course_id)
         with postclass_analytics:
-            display_postclass_analytics(session)
+            display_postclass_analytics(session, course_id)

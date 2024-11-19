@@ -85,7 +85,7 @@ class LivePollFeature:
                         st.warning(message)
                     st.rerun()
                 
-                self._display_poll_results(poll)
+                # self._display_poll_results(poll)
     
     def _display_poll_results(self, poll):
         """Helper method to display poll results"""
