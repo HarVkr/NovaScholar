@@ -5,7 +5,7 @@ from utils.helpers import display_progress_bar, create_notification, format_date
 from utils.sample_data import SAMPLE_SESSIONS, SAMPLE_COURSES
 from file_upload_vectorize import upload_resource, extract_text_from_file, create_vector_store, resources_collection, model, assignment_submit
 from db import courses_collection2, chat_history_collection, students_collection, faculty_collection, vectors_collection
-from chatbot import insert_chat_message
+from chatbot import give_chat_response
 from bson import ObjectId
 from live_polls import LivePollFeature
 import pandas as pd
@@ -29,56 +29,92 @@ def get_current_user():
 def display_preclass_content(session, student_id, course_id):
     """Display pre-class materials for a session"""
     
+    # Initialize 'messages' in session_state if it doesn't exist
+    if 'messages' not in st.session_state:
+        st.session_state.messages = []
+        
     # Display pre-class materials
     materials = list(resources_collection.find({"course_id": course_id, "session_id": session['session_id']}))
     st.subheader("Pre-class Materials")
     
-    for material in materials:
-        with st.expander(f"{material['file_name']} ({material['material_type'].upper()})"):
-            file_type = material.get('file_type', 'unknown')
-            if file_type == 'application/pdf':
-                st.markdown(f"📑 [Open PDF Document]({material['file_name']})")
-                if st.button("View PDF", key=f"view_pdf_{material['file_name']}"):
-                    st.text_area("PDF Content", material['text_content'], height=300)
-                if st.button("Download PDF", key=f"download_pdf_{material['file_name']}"):
-                    st.download_button(
-                        label="Download PDF",
-                        data=material['file_content'],
-                        file_name=material['file_name'],
-                        mime='application/pdf'
-                    )
-                if st.button("Mark PDF as Read", key=f"pdf_{material['file_name']}"):
-                    create_notification("PDF marked as read!", "success")
-
+    if materials:
+        for material in materials:
+            with st.expander(f"{material['file_name']} ({material['material_type'].upper()})"):
+                file_type = material.get('file_type', 'unknown')
+                if file_type == 'application/pdf':
+                    st.markdown(f"📑 [Open PDF Document]({material['file_name']})")
+                    if st.button("View PDF", key=f"view_pdf_{material['file_name']}"):
+                        st.text_area("PDF Content", material['text_content'], height=300)
+                    if st.button("Download PDF", key=f"download_pdf_{material['file_name']}"):
+                        st.download_button(
+                            label="Download PDF",
+                            data=material['file_content'],
+                            file_name=material['file_name'],
+                            mime='application/pdf'
+                        )
+                    if st.button("Mark PDF as Read", key=f"pdf_{material['file_name']}"):
+                        create_notification("PDF marked as read!", "success")
+    else:
+        st.info("No pre-class materials uploaded by the faculty.")
+        st.subheader("Learn the Topic Using Chatbot")
+        st.write(f"**Session Title:** {session['title']}")
+        st.write(f"**Description:** {session.get('description', 'No description available.')}")
+        
+        # Chatbot interface
+        if prompt := st.chat_input("Ask a question about the session topic"):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            
+            # Display User Message
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            
+            # Get response from chatbot
+            response = give_chat_response(student_id, session['session_id'], prompt, session['title'], session.get('description', ''))
+            st.session_state.messages.append({"role": "assistant", "content": response})
+            
+            # Display Assistant Response
+            with st.chat_message("assistant"):
+                st.markdown(response)
+    
+    st.subheader("Your Chat History")
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
     user = get_current_user()
     
     # Chat input
     # Add a check, if materials are available, only then show the chat input
-    if(st.session_state.user_type == "student"):
-        if materials:
-            if prompt := st.chat_input("Ask a question about Pre-class Materials"):
-                if len(st.session_state.messages) >= 20:
-                    st.warning("Message limit (20) reached for this session.")
-                    return
+    # if(st.session_state.user_type == "student"):
+    #     if materials:
+    #         if prompt := st.chat_input("Ask a question about Pre-class Materials"):
+    #             if len(st.session_state.messages) >= 20:
+    #                 st.warning("Message limit (20) reached for this session.")
+    #                 return
 
-                st.session_state.messages.append({"role": "user", "content": prompt})
-                
+    #             st.session_state.messages.append({"role": "user", "content": prompt})
+    if st.session_state.user_type == "student" and materials:
+        if prompt := st.chat_input("Ask a question about Pre-class Materials"):
+            if len(st.session_state.messages) >= 20:
+                st.warning("Message limit (20) reached for this session.")
+                return
+
+            st.session_state.messages.append({"role": "user", "content": prompt})            
                 # Display User Message
-                with st.chat_message("user"):
+            with st.chat_message("user"):
                     st.markdown(prompt)
 
-                # Get document context
-                context = ""
-                materials = resources_collection.find({"session_id": session['session_id']})
-                context = ""
-                vector_data = None
+            # Get document context
+            context = ""
+            materials = resources_collection.find({"session_id": session['session_id']})
+            context = ""
+            vector_data = None
 
-                context = ""
-                for material in materials:
-                    resource_id = material['_id']
-                    vector_data = vectors_collection.find_one({"resource_id": resource_id})
-                    if vector_data and 'text' in vector_data:
-                        context += vector_data['text'] + "\n"
+            context = ""
+            for material in materials:
+                resource_id = material['_id']
+                vector_data = vectors_collection.find_one({"resource_id": resource_id})
+                if vector_data and 'text' in vector_data:
+                    context += vector_data['text'] + "\n"
 
                 if not vector_data:
                     st.error("No Pre-class materials found for this session.")
