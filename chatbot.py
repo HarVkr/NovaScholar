@@ -26,20 +26,25 @@ def insert_chat_message(user_id, session_id, role, content):
         upsert=True
     )
 
-
-def give_chat_response(user_id, session_id, question, context, prompt):
-    st.title("Chat with NOVA")
-    st.write("Ask any question and NOVA will provide an answer.")
+def give_chat_response(user_id, session_id, question, title, description):
+    context_prompt = f"""
+    Based on the following session title and description, answer the user's question:
     
-    with st.form("chat_form"):
-        message = st.text_input("Message")
-        submit = st.form_submit_button("Send")
-        
-        if submit:
-            insert_chat_message(user_id, session_id, "user", message)
-            st.write(f"You: {message}")
-            
-            # Get response from NOVA
-            response = get_nova_response(question, context, prompt, message)
-            insert_chat_message(user_id, session_id, "nova", response)
-            st.write(f"NOVA: {response}")
+    Title: {title}
+    Description: {description}
+    
+    Question: {question}
+    
+    Please provide a clear and concise answer based only on the information provided in the title and description.
+    """
+    
+    response = model.generate_content(context_prompt)
+    if not response or not response.text:
+        return "No response received from the model"
+    
+    assistant_response = response.text
+    
+    # Save the chat message
+    insert_chat_message(user_id, session_id, "assistant", assistant_response)
+    
+    return assistant_response
