@@ -335,18 +335,6 @@ course_schema = {
 # }
 courses_collection2 = db['courses_collection2']
 
-# courses_collection2.insert_one(sample_course)
-#  print("Sample course inserted successfully!")
-
-
-# sessions_collection.insert_one(session_data)
-# sessions_collection.delete_one({"session_id": "S101"})
-
-# course_id = "C101"
-# sessions = sessions_collection.find({"course_id": course_id})
-# for session in sessions:
-#     print(session)
-
 
 # Define the users schema
 users_schema = {
@@ -379,15 +367,6 @@ users_schema = {
 # db.create_collection("users", validator={"$jsonSchema": users_schema})
 users_collection = db['users']
 
-# sample_user = {
-#     "user_id": "U103",
-#     "username": "Yash Desai",
-#     "password": generate_password_hash("yash"),
-#     "role": "Faculty",
-#     "created_at": datetime.utcnow()
-# }
-# users_collection.insert_one(sample_user)
-# print("Sample user inserted successfully!")
 
 # Defining the Student Collection
 student_schema = {
@@ -478,32 +457,6 @@ faculty_schema = {
 students_collection = db['students']
 faculty_collection = db['faculty']
 
-# Inserting Sample Student Data
-# sample_student = {
-#     "SID": "S102",
-#     "full_name": "Omkar Surve",
-#     "password": generate_password_hash("omkar"),
-#     "enrolled_courses": [
-#         {"course_id": "CS101", "title": "Introduction to Computer Science"}
-#     ],
-#     "created_at": datetime.utcnow()
-# }
-# # students_collection.insert_one(sample_student)
-# print("Sample student inserted successfully!")
-
-# Inserting Sample Faculty Data
-# sample_faculty = {
-#     "TID": "F101",
-#     "full_name": "Dr. John Doe",
-#     "password": generate_password_hash("john"),
-#     "courses_taught": [
-#         {"course_id": "CS101", "title": "Introduction to Computer Science"}
-#     ],
-#     "created_at": datetime.utcnow()
-# }
-# faculty_collection.insert_one(sample_faculty)
-# print("Sample faculty inserted successfully!")
-
 # Defining the Vector Collection Schema
 vector_schema = {
     "bsonType": "object",
@@ -580,10 +533,6 @@ chat_history_schema = {
 # Create the collection with the schema
 # db.create_collection("chat_history", validator={"$jsonSchema": chat_history_schema})
 chat_history_collection = db['chat_history']
-
-# Create the collection with the schema
-# db.create_collection("chat_history", validator={"$jsonSchema": chat_history_schema})
-# chat_history_collection = db['chat_history']
 
 
 # Database setup for Research Assistant

@@ -443,8 +443,9 @@ def main_dashboard():
             # Course selection
             enrolled_courses = get_courses(st.session_state.username, st.session_state.user_type)
 
-            if st.button("Create New Course", key="create_course", use_container_width=True):
-                    st.session_state.show_create_course_form = True
+            if st.session_state.user_type == "faculty":
+                if st.button("Create New Course", key="create_course", use_container_width=True):
+                        st.session_state.show_create_course_form = True
 
             if not enrolled_courses:
                     st.warning("No courses found")
