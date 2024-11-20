@@ -454,45 +454,12 @@ def create_course_form(faculty_name, faculty_id):
             st.rerun()
 
 
+from research_assistant_dashboard import display_research_assistant_dashboard
+
+
 def main_dashboard():
     if st.session_state.user_type == "research_assistant":
-        # Initialize session state for recommendations
-        if "recommendations" not in st.session_state:
-            st.session_state.recommendations = None
-
-        # Sidebar
-        with st.sidebar:
-            st.title(f"Welcome, {st.session_state.username}")
-            if st.button("Logout", use_container_width=True):
-                for key in st.session_state.keys():
-                    del st.session_state[key]
-                st.rerun()
-
-        # Main content
-        st.title("Research Paper Recommendations")
-        search_query = st.text_input("Enter research topic:")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Get Research Papers"):
-                if search_query:
-                    with st.spinner("Fetching recommendations..."):
-                        st.session_state.recommendations = get_research_papers(
-                            search_query
-                        )
-                        st.markdown(st.session_state.recommendations)
-                else:
-                    st.warning("Please enter a search query")
-
-        with col2:
-            if st.button("Analyze Research Gaps"):
-                if st.session_state.recommendations:
-                    with st.spinner("Analyzing research gaps..."):
-                        gaps = analyze_research_gaps(st.session_state.recommendations)
-                        st.markdown("### Potential Research Gaps")
-                        st.markdown(gaps)
-                else:
-                    st.warning("Please get research papers first")
+        display_research_assistant_dashboard()
 
     else:
         selected_course_id = None
