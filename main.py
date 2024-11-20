@@ -10,12 +10,8 @@ from db import (
     research_assistants_collection,
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-import hashlib
 import os
-import openai
 from openai import OpenAI
-from bson import ObjectId
-from pymongo import MongoClient
 from dotenv import load_dotenv
 
 client = OpenAI(api_key=os.getenv("OPENAI_KEY"))
