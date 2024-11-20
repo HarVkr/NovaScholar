@@ -574,5 +574,116 @@ vector_schema = {
 vectors_collection = db["vectors"]
 
 
-if __name__ == "__main__":
-    insert_sample_research_assistants()
+# Creating a Chat-History Collection
+# Creating a Chat-History Collection
+chat_history_schema = {
+    "bsonType": "object",
+    "required": ["user_id", "session_id", "messages", "timestamp"],
+    "properties": {
+        "user_id": {
+            "bsonType": "objectId",
+            "description": "Unique identifier for the user",
+        },
+        "session_id": {
+            "bsonType": "string",
+            "description": "Identifier for the session",
+        },
+        "timestamp": {
+            "bsonType": "date",
+            "description": "Timestamp when the chat session started",
+        },
+        "messages": {
+            "bsonType": "array",
+            "description": "List of chat messages",
+            "items": {
+                "bsonType": "object",
+                "properties": {
+                    "prompt": {
+                        "bsonType": "string",
+                        "description": "User's question or prompt",
+                    },
+                    "response": {
+                        "bsonType": "string",
+                        "description": "Assistant's response",
+                    },
+                    "timestamp": {
+                        "bsonType": "date",
+                        "description": "Timestamp of the message",
+                    },
+                },
+            },
+        },
+    },
+}
+
+# Create the collection with the schema
+# db.create_collection("chat_history", validator={"$jsonSchema": chat_history_schema})
+chat_history_collection = db["chat_history"]
+
+# Create the collection with the schema
+# db.create_collection("chat_history", validator={"$jsonSchema": chat_history_schema})
+# chat_history_collection = db['chat_history']
+
+
+# Database setup for Research Assistant
+# Research Assistant Schema
+research_assistant_schema = {
+    "bsonType": "object",
+    "required": ["full_name", "password", "email", "courses_assisted"],
+    "properties": {
+        "full_name": {
+            "bsonType": "string",
+            "description": "Full name of the research assistant",
+        },
+        "password": {
+            "bsonType": "string",
+            "description": "Hashed password of the research assistant",
+        },
+        "email": {
+            "bsonType": "string",
+            "description": "Email address of the research assistant",
+        },
+        "courses_assisted": {
+            "bsonType": "array",
+            "description": "List of courses the research assistant is assisting",
+            "items": {
+                "bsonType": "object",
+                "required": ["course_id"],
+                "properties": {
+                    "course_id": {
+                        "bsonType": "string",
+                        "description": "ID of the course",
+                    }
+                },
+            },
+        },
+    },
+}
+
+# Create research assistants collection
+research_assistants_collection = db["research_assistants"]
+
+# Create indexes
+research_assistants_collection.create_index("full_name", unique=True)
+research_assistants_collection.create_index("email", unique=True)
+
+
+# Optional: Sample data insertion function
+# def insert_sample_research_assistants():
+#     sample_research_assistants = [
+#         {
+#             "full_name": "John Doe RA",
+#             "password": generate_password_hash("password123"),
+#             "email": "john.ra@example.com",
+#             "courses_assisted": [{"course_id": "CS101"}, {"course_id": "CS102"}],
+#         }
+#     ]
+
+#     try:
+#         research_assistants_collection.insert_many(sample_research_assistants)
+#         print("Sample research assistants inserted successfully!")
+#     except Exception as e:
+#         print(f"Error inserting sample research assistants: {e}")
+
+# if __name__ == "__main__":
+#     insert_sample_research_assistants()
