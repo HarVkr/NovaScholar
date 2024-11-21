@@ -1,8 +1,6 @@
 import streamlit as st
 from datetime import datetime
-from utils.sample_data import SAMPLE_CHAT_HISTORY, SAMPLE_STUDENT_PROGRESS
 from utils.helpers import display_progress_bar, create_notification, format_datetime
-from utils.sample_data import SAMPLE_SESSIONS, SAMPLE_COURSES
 from file_upload_vectorize import upload_resource, extract_text_from_file, create_vector_store, resources_collection, model, assignment_submit
 from db import courses_collection2, chat_history_collection, students_collection, faculty_collection, vectors_collection
 from chatbot import give_chat_response
@@ -56,152 +54,60 @@ def display_preclass_content(session, student_id, course_id):
                         create_notification("PDF marked as read!", "success")
     else:
         st.info("No pre-class materials uploaded by the faculty.")
-        st.subheader("Learn the Topic Using Chatbot")
-        st.write(f"**Session Title:** {session['title']}")
-        st.write(f"**Description:** {session.get('description', 'No description available.')}")
+        st.subheader("Upload Pre-class Material")
         
-        # Chatbot interface
-        if prompt := st.chat_input("Ask a question about the session topic"):
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            
-            # Display User Message
-            with st.chat_message("user"):
-                st.markdown(prompt)
-            
-            # Get response from chatbot
-            response = give_chat_response(student_id, session['session_id'], prompt, session['title'], session.get('description', ''))
-            st.session_state.messages.append({"role": "assistant", "content": response})
-            
-            # Display Assistant Response
-            with st.chat_message("assistant"):
-                st.markdown(response)
+        # File upload section for students
+        uploaded_file = st.file_uploader("Upload Material", type=['txt', 'pdf', 'docx'])
+        if uploaded_file is not None:
+            with st.spinner("Processing document..."):
+                file_name = uploaded_file.name
+                file_content = extract_text_from_file(uploaded_file)
+                if file_content:
+                    material_type = st.selectbox("Select Material Type", ["pdf", "docx", "txt"])
+                    if st.button("Upload Material"):
+                        upload_resource(course_id, session['session_id'], file_name, uploaded_file, material_type)
+
+                        # Search for the newly uploaded resource's _id in resources_collection
+                        resource_id = resources_collection.find_one({"file_name": file_name})["_id"]
+                        create_vector_store(file_content, resource_id)
+                        st.success("Material uploaded successfully!")
+        
+    st.subheader("Learn the Topic Using Chatbot")
+    st.write(f"**Session Title:** {session['title']}")
+    st.write(f"**Description:** {session.get('description', 'No description available.')}")
+    
+    # Chatbot interface
+    if prompt := st.chat_input("Ask a question about the session topic"):
+        if len(st.session_state.messages) >= 20:
+            st.warning("Message limit (20) reached for this session.")
+            return
+
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        
+        # Display User Message
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        
+        # Get response from chatbot
+        context = ""
+        for material in materials:
+            if 'text_content' in material:
+                context += material['text_content'] + "\n"
+        
+        response = give_chat_response(student_id, session['session_id'], prompt, session['title'], session.get('description', ''), context)
+        st.session_state.messages.append({"role": "assistant", "content": response})
+        
+        # Display Assistant Response
+        with st.chat_message("assistant"):
+            st.markdown(response)
     
     st.subheader("Your Chat History")
     for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+        content = message.get("content", "")  # Default to an empty string if "content" is not present
+        role = message.get("role", "user")  # Default to "user" if "role" is not present
+        with st.chat_message(role):
+            st.markdown(content)
     user = get_current_user()
-    
-    # Chat input
-    # Add a check, if materials are available, only then show the chat input
-    # if(st.session_state.user_type == "student"):
-    #     if materials:
-    #         if prompt := st.chat_input("Ask a question about Pre-class Materials"):
-    #             if len(st.session_state.messages) >= 20:
-    #                 st.warning("Message limit (20) reached for this session.")
-    #                 return
-
-    #             st.session_state.messages.append({"role": "user", "content": prompt})
-    if st.session_state.user_type == "student" and materials:
-        if prompt := st.chat_input("Ask a question about Pre-class Materials"):
-            if len(st.session_state.messages) >= 20:
-                st.warning("Message limit (20) reached for this session.")
-                return
-
-            st.session_state.messages.append({"role": "user", "content": prompt})            
-                # Display User Message
-            with st.chat_message("user"):
-                    st.markdown(prompt)
-
-            # Get document context
-            context = ""
-            materials = resources_collection.find({"session_id": session['session_id']})
-            context = ""
-            vector_data = None
-
-            context = ""
-            for material in materials:
-                resource_id = material['_id']
-                vector_data = vectors_collection.find_one({"resource_id": resource_id})
-                if vector_data and 'text' in vector_data:
-                    context += vector_data['text'] + "\n"
-
-                if not vector_data:
-                    st.error("No Pre-class materials found for this session.")
-                    return
-                
-                try:
-                    # Generate response using Gemini
-                    context_prompt = f"""
-                    Based on the following context, answer the user's question:
-                    
-                    Context:
-                    {context}
-                    
-                    Question: {prompt}
-                    
-                    Please provide a clear and concise answer based only on the information provided in the context.
-                    """
-
-                    response = model.generate_content(context_prompt)
-                    if not response or not response.text:
-                        st.error("No response received from the model")
-                        return
-                    
-                    assistant_response = response.text
-                    # Display Assistant Response
-                    with st.chat_message("assistant"):
-                        st.markdown(assistant_response)
-                    
-                    # Build the message
-                    new_message = {
-                        "prompt": prompt,
-                        "response": assistant_response,
-                        "timestamp": datetime.utcnow()
-                    }
-                    st.session_state.messages.append(new_message)
-
-                    # Update database
-                    try:
-                        chat_history_collection.update_one(
-                            {
-                                "user_id": student_id,
-                                "session_id": session['session_id']
-                            },
-                            {
-                                "$push": {"messages": new_message},
-                                "$setOnInsert": {
-                                    "user_id": student_id,
-                                    "session_id": session['session_id'],
-                                    "timestamp": datetime.utcnow()
-                                }
-                            },
-                            upsert=True
-                        )
-                    except Exception as db_error:
-                        st.error(f"Error saving chat history: {str(db_error)}")
-                except Exception as e:
-                    st.error(f"Error generating response: {str(e)}")
-    
-    st.subheader("Your Chat History")
-
-    # Clear chat messages in session state when switching sessions
-    if 'current_session_id' not in st.session_state or st.session_state.current_session_id != session['session_id']:
-        st.session_state.current_session_id = session['session_id']
-        st.session_state.messages = []
-
-    # Initialize chat messages from database
-    if 'messages' not in st.session_state or not st.session_state.messages:
-        existing_chat = chat_history_collection.find_one({
-            "user_id": student_id,
-            "session_id": session['session_id']
-        })
-        if existing_chat and 'messages' in existing_chat:
-            st.session_state.messages = existing_chat['messages']
-        else:
-            st.session_state.messages = []
-
-    # Display existing chat history
-    try:
-        for message in st.session_state.messages:
-            if 'prompt' in message and 'response' in message:
-                with st.chat_message("user"):
-                    st.markdown(message["prompt"])
-                with st.chat_message("assistant"):
-                    st.markdown(message["response"])
-    except Exception as e:
-        st.error(f"Error displaying chat history: {str(e)}")
-
 
 def display_in_class_content(session, user_type):
     # """Display in-class activities and interactions"""
