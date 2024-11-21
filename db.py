@@ -80,6 +80,64 @@ def insert_sample_research_assistants():
 
 ###########
 
+###############
+# Add after research assistant schema
+
+# Analyst Schema
+analyst_schema = {
+    "bsonType": "object",
+    "required": ["full_name", "password", "email", "courses_analyzed"],
+    "properties": {
+        "full_name": {"bsonType": "string", "description": "Full name of the analyst"},
+        "password": {
+            "bsonType": "string",
+            "description": "Hashed password of the analyst",
+        },
+        "email": {"bsonType": "string", "description": "Email address of the analyst"},
+        "courses_analyzed": {
+            "bsonType": "array",
+            "description": "List of courses the analyst is analyzing",
+            "items": {
+                "bsonType": "object",
+                "required": ["course_id"],
+                "properties": {
+                    "course_id": {
+                        "bsonType": "string",
+                        "description": "ID of the course",
+                    }
+                },
+            },
+        },
+    },
+}
+
+# Create analysts collection
+analysts_collection = db["analysts"]
+
+# Create indexes for analysts
+analysts_collection.create_index("full_name", unique=True)
+analysts_collection.create_index("email", unique=True)
+
+
+def insert_sample_analysts():
+    sample_analysts = [
+        {
+            "full_name": "jane",
+            "password": generate_password_hash("jane"),
+            "email": "jane.analyst@example.com",
+            "courses_analyzed": [{"course_id": "CS101"}, {"course_id": "CS102"}],
+        }
+    ]
+
+    try:
+        analysts_collection.insert_many(sample_analysts)
+        print("Sample analysts inserted successfully!")
+    except Exception as e:
+        print(f"Error inserting sample analysts: {e}")
+
+
+##############@
+
 
 # Define the course schema
 course_schema = {
@@ -635,4 +693,4 @@ research_assistants_collection.create_index("email", unique=True)
 #         print(f"Error inserting sample research assistants: {e}")
 
 # if __name__ == "__main__":
-#     insert_sample_research_assistants()
+#     insert_sample_analysts()

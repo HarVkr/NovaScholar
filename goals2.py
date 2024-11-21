@@ -309,6 +309,181 @@ def display_analysis_results(analysis: Dict):
     st.metric("Relevance Score", f"{score}%")
 
 
+def display_analyst_dashboard():
+    st.title("Multi-Goal Document Analysis")
+
+    with st.sidebar:
+        st.markdown("### Input Section")
+        tab1, tab2 = st.tabs(["Document Analysis", "Similarity Search"])
+        # tab1, tab2 = st.tabs(["Document Analysis", "Similarity Search"])
+
+        with tab1:
+            # Multiple goals input
+            num_goals = st.number_input("Number of goals:", min_value=1, value=1)
+            goals = []
+            for i in range(num_goals):
+                goal = st.text_area(f"Goal {i+1}:", key=f"goal_{i}", height=100)
+                if goal:
+                    goals.append(goal)
+
+            uploaded_files = st.file_uploader(
+                "Upload documents",
+                accept_multiple_files=True,
+                type=["txt", "pdf", "docx"],
+            )
+            analyze_button = (
+                st.button("Analyze Documents") if goals and uploaded_files else None
+            )
+
+        with tab2:
+            # Keep existing similarity search tab
+            search_text = st.text_area("Enter text to find similar documents:")
+            search_limit = st.slider("Number of results", 1, 10, 5)
+            search_button = st.button("Search Similar") if search_text else None
+
+        if st.button("Logout", use_container_width=True):
+            for key in st.session_state.keys():
+                del st.session_state[key]
+            st.rerun()
+
+    if analyze_button:
+        analyzer = GoalAnalyzer()
+        vectorizer = DocumentVectorizer()
+
+        # Store vectors
+        doc_vectors = {}
+        goal_vectors = {}
+
+        # Process goals first
+        with st.spinner("Processing goals..."):
+            for i, goal in enumerate(goals):
+                vector = vectorizer.get_embedding(goal)
+                if vector:
+                    goal_vectors[f"Goal {i+1}"] = vector
+                    vectorizer.store_vector(f"Goal {i+1}", vector, goal, goal)
+
+        # Process documents
+        with st.spinner("Processing documents..."):
+            for file in uploaded_files:
+                st.markdown(f"### Analysis for {file.name}")
+
+                if vectorizer.vector_exists(file.name):
+                    st.info(f"Vector already exists for {file.name}")
+                    existing_doc = vectorizer.vectors_collection.find_one(
+                        {"name": file.name}
+                    )
+                    doc_vectors[file.name] = existing_doc["vector"]
+                else:
+                    text = analyzer.extract_text_from_file(file)
+                    if not text:
+                        st.warning(f"Could not extract text from {file.name}")
+                        continue
+
+                    vector = vectorizer.get_embedding(text)
+                    if vector:
+                        doc_vectors[file.name] = vector
+                        vectorizer.store_vector(file.name, vector, text)
+
+                # Display goal similarities
+                st.subheader("Goal Relevance Scores")
+                col1, col2 = st.columns([1, 2])
+
+                with col1:
+                    for goal_name, goal_vector in goal_vectors.items():
+                        similarity = (
+                            vectorizer.calculate_similarity(
+                                doc_vectors[file.name], goal_vector
+                            )
+                            * 100
+                        )
+                        st.metric(f"{goal_name}", f"{similarity:.1f}%")
+
+                with col2:
+                    # Get analysis for all goals combined
+                    analysis = asyncio.run(
+                        analyzer.get_perplexity_analysis(text, " | ".join(goals))
+                    )
+                    display_analysis_results(analysis)
+
+                st.divider()
+
+            # Document similarity matrix
+            if len(doc_vectors) > 1:
+                st.markdown("### Document Similarity Matrix")
+                files = list(doc_vectors.keys())
+                similarity_matrix = []
+
+                for file1 in files:
+                    row = []
+                    for file2 in files:
+                        similarity = vectorizer.calculate_similarity(
+                            doc_vectors[file1], doc_vectors[file2]
+                        )
+                        row.append(similarity)
+                    similarity_matrix.append(row)
+
+                df = pd.DataFrame(similarity_matrix, columns=files, index=files)
+                st.dataframe(df.style.background_gradient(cmap="RdYlGn"))
+
+                # Add goal-document similarity matrix
+                st.markdown("### Goal-Document Similarity Matrix")
+                goal_doc_matrix = []
+                goal_names = list(goal_vectors.keys())
+
+                for file in files:
+                    row = []
+                    for goal in goal_names:
+                        similarity = vectorizer.calculate_similarity(
+                            doc_vectors[file], goal_vectors[goal]
+                        )
+                        row.append(similarity)
+                    goal_doc_matrix.append(row)
+
+                df_goals = pd.DataFrame(
+                    goal_doc_matrix, columns=goal_names, index=files
+                )
+                st.dataframe(df_goals.style.background_gradient(cmap="RdYlGn"))
+
+    # Keep existing similarity search functionality
+    elif search_button:
+        vectorizer = DocumentVectorizer()
+        with st.spinner("Searching similar documents..."):
+            query_vector = vectorizer.get_embedding(search_text)
+            if query_vector:
+                similar_docs = vectorizer.vector_search(query_vector, search_limit)
+
+                if similar_docs:
+                    st.markdown("### Similar Documents Found")
+
+                    # Create DataFrame with numeric similarities
+                    df = pd.DataFrame(similar_docs)
+
+                    # Apply gradient to numeric column
+                    styled_df = df[["name", "similarity"]].style.background_gradient(
+                        cmap="RdYlGn", subset=["similarity"]
+                    )
+
+                    # Format display after styling
+                    styled_df = styled_df.format({"similarity": "{:.1%}"})
+
+                    st.dataframe(styled_df)
+
+                    # Show document contents
+                    for doc in similar_docs:
+                        with st.expander(
+                            f"📄 {doc['name']} (Similarity: {doc['similarity_display']})"
+                        ):
+                            st.text(
+                                doc["text"][:20] + "..."
+                                if len(doc["text"]) > 20
+                                else doc["text"]
+                            )
+                else:
+                    st.info("No similar documents found")
+            else:
+                st.error("Could not process search query")
+
+
 def main():
     st.title("Multi-Goal Document Analysis")
 

@@ -8,6 +8,7 @@ from db import (
     faculty_collection,
     students_collection,
     research_assistants_collection,
+    analysts_collection,
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
@@ -83,6 +84,8 @@ def login_user(username, password, user_type):
         user = faculty_collection.find_one({"full_name": username})
     elif user_type == "research_assistant":
         user = research_assistants_collection.find_one({"full_name": username})
+    elif user_type == "analyst":
+        user = analysts_collection.find_one({"full_name": username})
 
     if user and check_password_hash(user["password"], password):
         st.session_state.user_id = user["_id"]
@@ -99,7 +102,7 @@ def login_form():
 
     with st.form("login_form"):
         user_type = st.selectbox(
-            "Select User Type", ["student", "faculty", "research_assistant"]
+            "Select User Type", ["student", "faculty", "research_assistant", "analyst"]
         )
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
@@ -309,6 +312,97 @@ def get_new_course_id():
     return new_course_id
 
 
+# def register_page():
+#     st.title("Register")
+#     if "user_type" not in st.session_state:
+#         st.session_state.user_type = "student"
+
+#     # Select user type
+#     st.session_state.user_type = st.selectbox(
+#         "Select User Type", ["student", "faculty", "research_assistant"]
+#     )
+#     user_type = st.session_state.user_type
+#     print(user_type)
+
+#     with st.form("register_form"):
+#         # user_type = st.selectbox("Select User Type", ["student", "faculty", "research_assistant"])
+#         # print(user_type)
+#         full_name = st.text_input("Full Name")
+#         password = st.text_input("Password", type="password")
+#         confirm_password = st.text_input("Confirm Password", type="password")
+
+#         if user_type == "student":
+#             # Fetch courses for students to select from
+#             courses = list(courses_collection2.find({}, {"course_id": 1, "title": 1}))
+#             course_options = [
+#                 f"{course['title']} ({course['course_id']})" for course in courses
+#             ]
+#             selected_courses = st.multiselect("Available Courses", course_options)
+
+#         submit = st.form_submit_button("Register")
+
+#         if submit:
+#             if password == confirm_password:
+#                 hashed_password = generate_password_hash(password)
+#                 if user_type == "student":
+#                     new_student_id = get_new_student_id()
+#                     enrolled_courses = [
+#                         {
+#                             "course_id": course.split("(")[-1][:-1],
+#                             "title": course.split(" (")[0],
+#                         }
+#                         for course in selected_courses
+#                     ]
+#                     students_collection.insert_one(
+#                         {
+#                             "SID": new_student_id,
+#                             "full_name": full_name,
+#                             "password": hashed_password,
+#                             "enrolled_courses": enrolled_courses,
+#                             "created_at": datetime.utcnow(),
+#                         }
+#                     )
+#                     st.success(
+#                         f"Student registered successfully with ID: {new_student_id}"
+#                     )
+#                 elif user_type == "faculty":
+#                     new_faculty_id = get_new_faculty_id()
+#                     faculty_collection.insert_one(
+#                         {
+#                             "TID": new_faculty_id,
+#                             "full_name": full_name,
+#                             "password": hashed_password,
+#                             "courses_taught": [],
+#                             "created_at": datetime.utcnow(),
+#                         }
+#                     )
+#                     st.success(
+#                         f"Faculty registered successfully with ID: {new_faculty_id}"
+#                     )
+#                 elif user_type == "research_assistant":
+#                     research_assistants_collection.insert_one(
+#                         {
+#                             "full_name": full_name,
+#                             "password": hashed_password,
+#                             "created_at": datetime.utcnow(),
+#                         }
+#                     )
+#                     st.success("Research Assistant registered successfully!")
+#             else:
+#                 st.error("Passwords do not match")
+
+
+def get_new_analyst_id():
+    """Generate a new analyst ID by incrementing the last analyst ID"""
+    last_analyst = analysts_collection.find_one(sort=[("AID", -1)])
+    if last_analyst:
+        last_id = int(last_analyst["AID"][1:])
+        new_id = f"A{last_id + 1}"
+    else:
+        new_id = "A1"
+    return new_id
+
+
 def register_page():
     st.title("Register")
     if "user_type" not in st.session_state:
@@ -316,14 +410,12 @@ def register_page():
 
     # Select user type
     st.session_state.user_type = st.selectbox(
-        "Select User Type", ["student", "faculty", "research_assistant"]
+        "Select User Type", ["student", "faculty", "research_assistant", "analyst"]
     )
     user_type = st.session_state.user_type
     print(user_type)
 
     with st.form("register_form"):
-        # user_type = st.selectbox("Select User Type", ["student", "faculty", "research_assistant"])
-        # print(user_type)
         full_name = st.text_input("Full Name")
         password = st.text_input("Password", type="password")
         confirm_password = st.text_input("Confirm Password", type="password")
@@ -385,6 +477,17 @@ def register_page():
                         }
                     )
                     st.success("Research Assistant registered successfully!")
+                elif user_type == "analyst":
+                    # new_analyst_id = get_new_analyst_id()
+                    analysts_collection.insert_one(
+                        {
+                            # "AID": new_analyst_id,
+                            "full_name": full_name,
+                            "password": hashed_password,
+                            "created_at": datetime.utcnow(),
+                        }
+                    )
+                    st.success("Analyst registered successfully!")
             else:
                 st.error("Passwords do not match")
 
@@ -452,11 +555,14 @@ def create_course_form(faculty_name, faculty_id):
 
 from research_assistant_dashboard import display_research_assistant_dashboard
 
+from goals2 import display_analyst_dashboard
+
 
 def main_dashboard():
     if st.session_state.user_type == "research_assistant":
         display_research_assistant_dashboard()
-
+    elif st.session_state.user_type == "analyst":
+        display_analyst_dashboard()
     else:
         selected_course_id = None
         create_session = False
@@ -473,8 +579,10 @@ def main_dashboard():
             )
 
             if st.session_state.user_type == "faculty":
-                if st.button("Create New Course", key="create_course", use_container_width=True):
-                        st.session_state.show_create_course_form = True
+                if st.button(
+                    "Create New Course", key="create_course", use_container_width=True
+                ):
+                    st.session_state.show_create_course_form = True
 
             if not enrolled_courses:
                 st.warning("No courses found")
@@ -537,6 +645,7 @@ def main_dashboard():
         #     display_session_content(st.session_state.user_id, selected_course_id, st.session_state.selected_session, st.session_state.username, st.session_state.user_type)
         # if create_session:
         #     create_session_form(selected_course_id)
+
 
 def main():
     st.set_page_config(page_title="NOVAScholar", page_icon="📚", layout="wide")
