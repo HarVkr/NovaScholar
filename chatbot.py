@@ -26,23 +26,24 @@ def insert_chat_message(user_id, session_id, role, content):
         upsert=True
     )
 
-def give_chat_response(user_id, session_id, question, title, description):
+def give_chat_response(user_id, session_id, question, title, description, context):
     context_prompt = f"""
-    Based on the following session title and description, answer the user's question:
+    Based on the following session title, description, and context, answer the user's question in 3-4 lines:
     
     Title: {title}
     Description: {description}
+    Context: {context}
     
     Question: {question}
     
-    Please provide a clear and concise answer based only on the information provided in the title and description.
+    Please provide a clear and concise answer based on the information provided.
     """
     
     response = model.generate_content(context_prompt)
     if not response or not response.text:
         return "No response received from the model"
     
-    assistant_response = response.text
+    assistant_response = response.text.strip()
     
     # Save the chat message
     insert_chat_message(user_id, session_id, "assistant", assistant_response)
