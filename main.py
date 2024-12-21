@@ -101,8 +101,9 @@ def login_form():
     st.title("Welcome to NOVAScholar")
 
     with st.form("login_form"):
+        
         user_type = st.selectbox(
-            "Select User Type", ["student", "faculty", "research_assistant", "analyst"]
+            "Please select your Role", ["student", "faculty", "research_assistant", "analyst"]
         )
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
@@ -184,15 +185,17 @@ def create_session_form(course_id):
     """Display form to create a new session and perform the creation operation"""
     st.title("Create New Session")
 
+    if 'session_time' not in st.session_state:
+        st.session_state.session_time = datetime.now().time()
+    if 'show_create_session_form' not in st.session_state:
+        st.session_state.show_create_session_form = False
+
     with st.form("create_session_form"):
         session_title = st.text_input("Session Title")
         session_date = st.date_input("Session Date", date.today(), key="session_date")
         session_time = st.time_input(
             "Session Time", st.session_state.session_time, key="session_time"
         )
-
-        if "show_create_session_form" not in st.session_state:
-            st.session_state.show_create_session_form = False
 
         new_session_id = None
         # Generate new session ID

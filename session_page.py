@@ -1,3 +1,4 @@
+import random
 import streamlit as st
 from datetime import datetime
 from utils.helpers import display_progress_bar, create_notification, format_datetime
@@ -24,7 +25,7 @@ def get_current_user():
         return None
     return students_collection.find_one({"_id": st.session_state.user_id})
 
-def display_preclass_content(session, student_id, course_id):
+# def display_preclass_content(session, student_id, course_id):
     """Display pre-class materials for a session"""
     
     # Initialize 'messages' in session_state if it doesn't exist
@@ -101,13 +102,308 @@ def display_preclass_content(session, student_id, course_id):
         with st.chat_message("assistant"):
             st.markdown(response)
     
-    st.subheader("Your Chat History")
-    for message in st.session_state.messages:
-        content = message.get("content", "")  # Default to an empty string if "content" is not present
-        role = message.get("role", "user")  # Default to "user" if "role" is not present
-        with st.chat_message(role):
-            st.markdown(content)
-    user = get_current_user()
+    # st.subheader("Your Chat History")
+    # for message in st.session_state.messages:
+    #     content = message.get("content", "")  # Default to an empty string if "content" is not present
+    #     role = message.get("role", "user")  # Default to "user" if "role" is not present
+    #     with st.chat_message(role):
+    #         st.markdown(content)
+    # user = get_current_user()
+    
+def display_preclass_content(session, student_id, course_id):
+    """Display pre-class materials for a session"""
+    st.subheader("Pre-class Materials")
+
+    # Display pre-class materials
+    materials = resources_collection.find({"session_id": session['session_id']})
+    for material in materials:
+        with st.expander(f"{material['file_name']} ({material['material_type'].upper()})"):
+            file_type = material.get('file_type', 'unknown')
+            if file_type == 'application/pdf':
+                st.markdown(f"📑 [Open PDF Document]({material['file_name']})")
+                if st.button("View PDF", key=f"view_pdf_{material['file_name']}"):
+                    st.text_area("PDF Content", material['text_content'], height=300)
+                if st.button("Download PDF", key=f"download_pdf_{material['file_name']}"):
+                    st.download_button(
+                        label="Download PDF",
+                        data=material['file_content'],
+                        file_name=material['file_name'],
+                        mime='application/pdf'
+                    )
+                if st.button("Mark PDF as Read", key=f"pdf_{material['file_name']}"):
+                    create_notification("PDF marked as read!", "success")
+
+    # Chat input
+    # Add a check, if materials are available, only then show the chat input
+    if(st.session_state.user_type == "student"):
+        if materials:
+            if prompt := st.chat_input("Ask a question about Pre-class Materials"):
+                if len(st.session_state.messages) >= 20:
+                    st.warning("Message limit (20) reached for this session.")
+                    return
+
+                st.session_state.messages.append({"role": "user", "content": prompt})
+
+                # Display User Message
+                with st.chat_message("user"):
+                    st.markdown(prompt)
+
+                # Get document context
+                context = ""
+                materials = resources_collection.find({"session_id": session['session_id']})
+                context = ""
+                vector_data = None
+
+                context = ""
+                for material in materials:
+                    resource_id = material['_id']
+                    vector_data = vectors_collection.find_one({"resource_id": resource_id})
+                    if vector_data and 'text' in vector_data:
+                        context += vector_data['text'] + "\n"
+
+                if not vector_data:
+                    st.error("No Pre-class materials found for this session.")
+                    return
+
+                try:
+                    # Generate response using Gemini
+                    context_prompt = f"""
+                    Based on the following context, answer the user's question:
+                    
+                    Context:
+                    {context}
+                    
+                    Question: {prompt}
+                    
+                    Please provide a clear and concise answer based only on the information provided in the context.
+                    """
+
+                    response = model.generate_content(context_prompt)
+                    if not response or not response.text:
+                        st.error("No response received from the model")
+                        return
+
+                    assistant_response = response.text
+                    # Display Assistant Response
+                    with st.chat_message("assistant"):
+                        st.markdown(assistant_response)
+
+                    # Build the message
+                    new_message = {
+                        "prompt": prompt,
+                        "response": assistant_response,
+                        "timestamp": datetime.utcnow()
+                    }
+                    st.session_state.messages.append(new_message)
+
+                    # Update database
+                    try:
+                        chat_history_collection.update_one(
+                            {
+                                "user_id": student_id,
+                                "session_id": session['session_id']
+                            },
+                            {
+                                "$push": {"messages": new_message},
+                                "$setOnInsert": {
+                                    "user_id": student_id,
+                                    "session_id": session['session_id'],
+                                    "timestamp": datetime.utcnow()
+                                }
+                            },
+                            upsert=True
+                        )
+                    except Exception as db_error:
+                        st.error(f"Error saving chat history: {str(db_error)}")
+                except Exception as e:
+                    st.error(f"Error generating response: {str(e)}")
+
+    else:
+        st.subheader("Upload Pre-class Material")
+        # File upload section for students
+        uploaded_file = st.file_uploader("Upload Material", type=['txt', 'pdf', 'docx'])
+        if uploaded_file is not None:
+            with st.spinner("Processing document..."):
+                file_name = uploaded_file.name
+                file_content = extract_text_from_file(uploaded_file)
+                if file_content:
+                    material_type = st.selectbox("Select Material Type", ["pdf", "docx", "txt"])
+                    if st.button("Upload Material"):
+                        upload_resource(course_id, session['session_id'], file_name, uploaded_file, material_type)
+
+                        # Search for the newly uploaded resource's _id in resources_collection
+                        resource_id = resources_collection.find_one({"file_name": file_name})["_id"]
+                        create_vector_store(file_content, resource_id)
+                        st.success("Material uploaded successfully!")
+
+    # st.subheader("Your Chat History")
+    if st.button("View Chat History"):
+        # Initialize chat messages from database
+        if 'messages' not in st.session_state or not st.session_state.messages:
+            existing_chat = chat_history_collection.find_one({
+                "user_id": student_id,
+                "session_id": session['session_id']
+            })
+            if existing_chat and 'messages' in existing_chat:
+                st.session_state.messages = existing_chat['messages']
+            else:
+                st.session_state.messages = []
+
+        # Display existing chat history
+        try:
+            for message in st.session_state.messages:
+                if 'prompt' in message and 'response' in message:
+                    with st.chat_message("user"):
+                        st.markdown(message["prompt"])
+                    with st.chat_message("assistant"):
+                        st.markdown(message["response"])
+        except Exception as e:
+            st.error(f"Error displaying chat history: {str(e)}")
+            st.session_state.messages = []
+    
+    if st.session_state.user_type == 'student':
+        st.subheader("Create a Practice Quiz")
+        questions = []
+        quiz_id = ""
+        with st.form("create_quiz_form"):
+            num_questions = st.number_input("Number of Questions", min_value=1, max_value=20, value=2)
+            submit_quiz = st.form_submit_button("Generate Quiz")
+            if submit_quiz:
+                # Get pre-class materials from resources_collection
+                materials = resources_collection.find({"session_id": session['session_id']})
+                context = ""
+                for material in materials:
+                    if 'text_content' in material:
+                        context += material['text_content'] + "\n"
+
+                if not context:
+                    st.error("No pre-class materials found for this session.")
+                    return
+
+                # Generate MCQs from context
+                questions = generate_mcqs(context, num_questions, session['title'], session.get('description', ''))
+                if questions:
+                    quiz_id = save_quiz(course_id, session['session_id'], "Practice Quiz", questions, student_id)
+                    if quiz_id:
+                            st.success("Quiz saved successfully!")
+                            st.session_state.show_quizzes = True
+                    else:
+                            st.error("Error saving quiz.")
+                else:
+                    st.error("Error generating questions.")
+
+        # if st.button("Attempt Practice Quizzes "):
+            # quizzes = list(quizzes_collection.find({"course_id": course_id, "session_id": session['session_id'], "user_id": student_id}))
+            
+            
+        if getattr(st.session_state, 'show_quizzes', False):
+            # quiz = quizzes_collection.find_one({"course_id": course_id, "session_id": session['session_id'], "user_id": student_id})
+            quiz = quizzes_collection.find_one(
+                {"course_id": course_id, "session_id": session['session_id'], "user_id": student_id},
+                sort=[("created_at", -1)]
+            )
+            if not quiz:
+                st.info("No practice quizzes created.")
+            else:
+                    with st.expander(f"📝 Practice Quiz", expanded=False):
+                        # Check if student has already taken this quiz
+                        existing_score = get_student_quiz_score(quiz['_id'], student_id)
+                        
+                        if existing_score is not None:
+                            st.success(f"Quiz completed! Your score: {existing_score:.1f}%")
+                            
+                            # Display correct answers after submission
+                            st.subheader("Quiz Review")
+                            for i, question in enumerate(quiz['questions']):
+                                st.markdown(f"**Question {i+1}:** {question['question']}")
+                                for opt in question['options']:
+                                    if opt.startswith(question['correct_option']):
+                                        st.markdown(f"✅ {opt}")
+                                    else:
+                                        st.markdown(f"- {opt}")
+                            
+                        else:
+                             # Initialize quiz state for this specific quiz
+                            quiz_key = f"quiz_{quiz['_id']}_student_{student_id}"
+                            if quiz_key not in st.session_state:
+                                st.session_state[quiz_key] = {
+                                    'submitted': False,
+                                    'score': None,
+                                    'answers': {}
+                                }
+
+                            # If quiz was just submitted, show the results
+                            if st.session_state[quiz_key]['submitted']:
+                                st.success(f"Quiz submitted successfully! Your score: {st.session_state[quiz_key]['score']:.1f}%")
+                                # Reset the quiz state
+                                st.session_state[quiz_key]['submitted'] = False
+
+
+                            # Display quiz questions
+                            st.write("Please select your answers:")
+                            
+                            # Create a form for quiz submission
+                            form_key = f"quiz_form_{quiz['_id']}_student_{student_id}"
+                            with st.form(key=form_key):
+                                student_answers = {}
+                                
+                                for i, question in enumerate(quiz['questions']):
+                                    st.markdown(f"**Question {i+1}:** {question['question']}")
+                                    options = [opt for opt in question['options']]
+                                    # student_answers[str(i)] = st.radio(
+                                    #     f"Select answer for question {i+1}:",
+                                    #     options=options,
+                                    #     key=f"q_{i}",
+                                    #     index=None
+                                    # ) 
+                                    answer = st.radio(
+                                        f"Select answer for question {i+1}:",
+                                        options=options,
+                                        key=f"{quiz['_id']}_{i}",  # Simplify the radio button key
+                                        index=None
+                                    )
+                                    if answer:  # Only add to answers if a selection was made
+                                        student_answers[str(i)] = answer                               
+
+                                # Submit button
+                                # submitted =  st.form_submit_button("Submit Quiz")
+                                print("Before the submit button")
+                                submit_button = st.form_submit_button("Submit Quiz")
+                                print("After the submit button")
+                            if submit_button and student_answers:
+                                print("Clicked the button")
+                                print(student_answers)
+                                correct_answers = 0
+                                for i, question in enumerate(quiz['questions']):
+                                    if student_answers[str(i)] == question['correct_option']:
+                                        correct_answers += 1
+                                score = (correct_answers / len(quiz['questions'])) * 100
+                                
+                                if score is not None:
+                                    st.success(f"Quiz submitted successfully! Your score: {score:.1f}%")
+                                    st.session_state[quiz_key]['submitted'] = True
+                                    st.session_state[quiz_key]['score'] = score
+                                    st.session_state[quiz_key]['answers'] = student_answers
+                                    # This will trigger a rerun, but now we'll handle it properly
+                                    st.rerun()
+                        
+                                else:
+                                    st.error("Error submitting quiz. Please try again.")
+                                # correct_answers = 0
+                                # for i, question in enumerate(quiz['questions']):
+                                #     if student_answers[str(i)] == question['correct_option']:
+                                #         correct_answers += 1
+                                # score = (correct_answers / len(quiz['questions'])) * 100
+                                # print(score)
+                                # try:
+                                #     quizzes_collection.update_one(
+                                #         {"_id": quiz['_id']},
+                                #         {"$push": {"submissions": {"student_id": student_id, "score": score}}}
+                                #     )
+                                #     st.success(f"Quiz submitted successfully! Your score: {score:.1f}%")
+                                # except Exception as db_error:
+                                #     st.error(f"Error saving submission: {str(db_error)}")
+
 
 def display_in_class_content(session, user_type):
     # """Display in-class activities and interactions"""
@@ -122,6 +418,10 @@ def display_in_class_content(session, user_type):
         live_polls.display_faculty_interface(session['session_id'])
     else:
         live_polls.display_student_interface(session['session_id'])
+
+def generate_random_assignment_id():
+    """Generate a random integer ID for assignments"""
+    return random.randint(100000, 999999)
 
 def display_post_class_content(session, student_id, course_id):
     """Display post-class assignments and submissions"""
@@ -178,17 +478,22 @@ def display_post_class_content(session, student_id, course_id):
                         st.success("Quiz saved successfully!")
                     else:
                         st.error("Error saving quiz.")
+                else:
+                    st.error("Error generating questions.")
 
         st.subheader("Add Assignments")
         # Add assignment form
         with st.form("add_assignment_form"):
             title = st.text_input("Assignment Title")
             due_date = st.date_input("Due Date")
+            due_date = datetime.strptime(due_date.strftime('%Y-%m-%d'), '%Y-%m-%d')
             submit = st.form_submit_button("Add Assignment")
             
             if submit:
                 due_date = datetime.combine(due_date, datetime.min.time())
                 # Save the assignment to the database
+                assignment_id = ObjectId()
+                print("Assignment ID: ", assignment_id)
                 assignment = {
                     "id": ObjectId(),
                     "title": title,

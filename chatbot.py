@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from bson import ObjectId
 from file_upload_vectorize import model
+from gen_mcqs import generate_mcqs, quizzes_collection
 
 load_dotenv()
 MONGO_URI = os.getenv('MONGO_URI')
@@ -49,3 +50,18 @@ def give_chat_response(user_id, session_id, question, title, description, contex
     insert_chat_message(user_id, session_id, "assistant", assistant_response)
     
     return assistant_response
+
+def create_quiz_by_context(user_id, session_id, context, length, session_title, session_description):
+    """Create a quiz based on the context provided"""
+    quiz = generate_mcqs(context, length, session_title, session_description)
+    if not quiz:
+        return "No quiz generated";
+    
+    # Save the quiz
+    quizzes_collection.insert_one({
+        "user_id": ObjectId(user_id),
+        "session_id": ObjectId(session_id),
+        "questions": quiz,
+        "timestamp": datetime.utcnow()
+    })
+    return "Quiz created successfully"

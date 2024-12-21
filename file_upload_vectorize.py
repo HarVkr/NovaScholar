@@ -70,12 +70,14 @@ def assignment_submit(student_id, course_id, session_id, assignment_id,  file_na
         "student_id": student_id,
         "course_id": course_id,
         "session_id": session_id,
+        "assignment_id": assignment_id,
         "file_name": file_name,
         "file_type": file_content.type,
         "file_content": original_file_content,  # Store the original file content
         "text_content": text_content,
         "material_type": material_type,
-        "uploaded_at": datetime.utcnow()
+        "submitted_at": datetime.utcnow(),
+        "file_url": "sample_url"
     }
     try:
         courses_collection2.update_one(
