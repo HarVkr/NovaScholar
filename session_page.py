@@ -14,9 +14,15 @@ import os
 from pymongo import MongoClient
 from gen_mcqs import generate_mcqs, save_quiz, quizzes_collection, get_student_quiz_score, submit_quiz_answers
 from goals2 import GoalAnalyzer
+from openai import OpenAI
+import asyncio
+import numpy as np
+from analytics import derive_analytics, create_embeddings, cosine_similarity
 
 load_dotenv()
 MONGO_URI = os.getenv('MONGO_URI')
+PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_KEY')
+OPENAI_API_KEY = os.getenv('OPENAI_KEY')
 client = MongoClient(MONGO_URI)
 db = client["novascholar_db"]
 polls_collection = db["polls"]
@@ -1420,3 +1426,343 @@ def judge_subjective_test_answers(test_id, student_id):
         {"_id": test_id, "submissions.student_id": student_id},
         {"$set": {"submissions.$.analysis": analysis}}
     )
+
+def display_subjective_test_tab(student_id, course_id, session_id):
+    """Display subjective tests for students with improved error handling"""
+    st.header("Subjective Tests")
+    
+    try:
+        # Convert string IDs to ObjectId if needed
+        student_id = str(student_id)  # Ensure student_id is string for comparison
+        
+        # Get tests with proper query and error handling
+        tests_cursor = subjective_tests_collection.find({
+            "course_id": course_id,
+            "session_id": session_id,
+            "status": "active"
+        })
+        
+        subjective_tests = list(tests_cursor)
+
+        if not subjective_tests:
+            st.info("No subjective tests available for this session.")
+            return
+            
+        # Get pre-class materials with error handling
+        materials_cursor = resources_collection.find({
+            "course_id": course_id,
+            "session_id": session_id
+        })
+        
+        preclass_materials = list(materials_cursor)
+        preclass_materials_content = ""
+        for material in preclass_materials:
+            if material.get('text_content'):
+                preclass_materials_content += material['text_content'] + "\n"
+
+        for test in subjective_tests:
+            with st.expander(f"📝 {test.get('title', 'Untitled Test')}", expanded=True):
+                test_tab, analysis_tab = st.tabs(["Test", "Analysis"])
+                
+                with test_tab:
+                    # Find existing submission with proper error handling
+                    existing_submission = None
+                    if 'submissions' in test:
+                        for sub in test['submissions']:
+                            if sub.get('student_id') == student_id:
+                                existing_submission = sub
+                                break
+                    
+                    if existing_submission:
+                        st.success("Test completed! Your answers have been submitted.")
+                        st.subheader("Your Answers")
+                        
+                        # Safely access questions and answers
+                        questions = test.get('questions', [])
+                        answers = existing_submission.get('answers', [])
+                        
+                        for i, (question, answer) in enumerate(zip(questions, answers)):
+                            st.markdown(f"**Question {i+1}:** {question.get('question', 'Question not available')}")
+                            st.markdown(f"**Your Answer:** {answer}")
+                            
+                            try:
+                                # Generate analysis for each answer
+                                analysis = derive_analytics(
+                                    goal="Analyze Subjective Answer",
+                                    reference_text=answer,
+                                    openai_api_key=OPENAI_API_KEY,
+                                    context=preclass_materials_content
+                                )
+                                
+                                # Safely update submission with analysis
+                                if analysis:
+                                    if 'answer_analyses' not in existing_submission:
+                                        existing_submission['answer_analyses'] = {}
+                                    existing_submission['answer_analyses'][str(i)] = analysis
+                                    
+                                    # Update the submission in the database
+                                    update_result = subjective_tests_collection.update_one(
+                                        {
+                                            "_id": test['_id'],
+                                            "submissions.student_id": student_id
+                                        },
+                                        {
+                                            "$set": {
+                                                "submissions.$": existing_submission
+                                            }
+                                        }
+                                    )
+                                    
+                                    if update_result.modified_count == 0:
+                                        print(f"Warning: Failed to update analysis for question {i}")
+                                        
+                            except Exception as e:
+                                print(f"Error generating analysis for question {i}: {str(e)}")
+                                st.warning(f"Analysis generation failed for question {i+1}")
+                            
+                            st.markdown("---")
+                    else:
+                        st.write("Please write your answers:")
+                        with st.form(key=f"subjective_test_form_{test['_id']}"):
+                            student_answers = []
+                            for i, question in enumerate(test.get('questions', [])):
+                                st.markdown(f"**Question {i+1}:** {question.get('question', 'Question not available')}")
+                                answer = st.text_area(
+                                    "Your answer:",
+                                    key=f"q_{test['_id']}_{i}",
+                                    height=200
+                                )
+                                student_answers.append(answer)
+
+                            if st.form_submit_button("Submit Test"):
+                                if all(answer.strip() for answer in student_answers):
+                                    try:
+                                        success = submit_subjective_test(
+                                            test['_id'],
+                                            student_id,
+                                            student_answers
+                                        )
+                                        if success:
+                                            st.success("Test submitted successfully!")
+                                            st.rerun()
+                                        else:
+                                            st.error("Error submitting test. Please try again.")
+                                    except Exception as e:
+                                        st.error(f"Failed to submit test: {str(e)}")
+                                else:
+                                    st.error("Please answer all questions before submitting.")
+                
+                with analysis_tab:
+                    if existing_submission and existing_submission.get('answer_analyses'):
+                        st.subheader("Answer Analysis")
+                        for i, analysis in existing_submission['answer_analyses'].items():
+                            question_num = int(i) + 1
+                            st.markdown(f"### Question {question_num}")
+                            
+                            # Safely split and display analysis sections
+                            try:
+                                sections = analysis.split("**")
+                                for j in range(1, len(sections), 2):
+                                    if j < len(sections):
+                                        section_title = sections[j]
+                                        section_content = sections[j + 1] if j + 1 < len(sections) else ""
+                                        st.markdown(f"#### {section_title}")
+                                        st.markdown(section_content)
+                            except Exception as e:
+                                print(f"Error displaying analysis for question {question_num}: {str(e)}")
+                                st.error(f"Error displaying analysis for question {question_num}")
+                            
+                            st.markdown("---")
+                    else:
+                        st.info("Submit your test to view the analysis.")
+                                
+    except Exception as e:
+        error_msg = f"Error loading subjective tests: {str(e)}"
+        print(error_msg, flush=True)
+        st.error("Unable to load subjective tests. Please try again later.")
+
+def analyze_subjective_answers(test_id, student_id, context):
+    """Analyze subjective test answers for correctness and improvements"""
+    try:
+        # Get test and submission details
+        if isinstance(test_id, str):
+            test_id = ObjectId(test_id)
+            
+        test_doc = subjective_tests_collection.find_one({"_id": test_id})
+        if not test_doc:
+            print(f"Test document not found for test_id: {test_id}")
+            return None
+            
+        submission = next(
+            (sub for sub in test_doc.get('submissions', []) if sub['student_id'] == student_id),
+            None
+        )
+        
+        if not submission:
+            print(f"No submission found for student_id: {student_id}")
+            return None
+        
+        # Get questions and answers
+        questions = test_doc.get('questions', [])
+        student_answers = submission.get('answers', [])
+        
+        if not questions or not student_answers:
+            print("No questions or answers found")
+            return None
+            
+        # Create formatted content for analysis
+        analysis_content = ""
+        for q, a in zip(questions, student_answers):
+            analysis_content += f"Question: {q['question']}\nAnswer: {a}\n\n"
+            
+        # Initialize OpenAI client
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        
+        # Generate content analysis using OpenAI
+        try:
+            analysis_prompt = f"""
+            Analyze the following test answers. Provide a detailed evaluation of:
+            1. Understanding of concepts
+            2. Clarity of expression
+            3. Completeness of answers
+            4. Areas of strength
+            
+            Content to analyze:
+            {analysis_content}
+            """
+            
+            analysis_response = client.chat.completions.create(
+                model="gpt-4-0125-preview",
+                messages=[
+                    {"role": "system", "content": "You are an educational assessment expert."},
+                    {"role": "user", "content": analysis_prompt}
+                ],
+                temperature=0.7
+            )
+            analytics = analysis_response.choices[0].message.content
+            
+            # Generate improvement suggestions
+            improvement_prompt = f"""
+            Based on these test answers, provide specific suggestions for improvement:
+            
+            {analysis_content}
+            
+            Focus on:
+            1. Areas that need more detail
+            2. Concepts that could be explained better
+            3. Specific examples that could be added
+            4. How to strengthen the arguments
+            """
+            
+            improvement_response = client.chat.completions.create(
+                model="gpt-4-0125-preview",
+                messages=[
+                    {"role": "system", "content": "You are an educational assessment expert."},
+                    {"role": "user", "content": improvement_prompt}
+                ],
+                temperature=0.7
+            )
+            improvements = improvement_response.choices[0].message.content
+            
+        except Exception as e:
+            print(f"Error in generating analysis with OpenAI: {str(e)}")
+            analytics = "Error generating analysis"
+            improvements = "Error generating improvements"
+            
+        # Calculate similarity score
+        try:
+            # Create embeddings using OpenAI
+            embedding_response = client.embeddings.create(
+                model="text-embedding-3-small",
+                input=[context, analysis_content]
+            )
+            
+            context_embedding = embedding_response.data[0].embedding
+            answer_embedding = embedding_response.data[1].embedding
+            
+            # Convert to numpy arrays and calculate similarity
+            context_array = np.array(context_embedding).reshape(1, -1)
+            answer_array = np.array(answer_embedding).reshape(1, -1)
+            similarity_score = float(cosine_similarity(context_array, answer_array)[0][0])
+            
+        except Exception as e:
+            print(f"Error in calculating similarity: {str(e)}")
+            similarity_score = 0.0
+        
+        # Store analysis results
+        analysis_results = {
+            "similarity_score": similarity_score,
+            "content_analysis": analytics,
+            "suggested_improvements": improvements,
+            "analyzed_at": datetime.utcnow()
+        }
+        
+        try:
+            # Update the submission with analysis
+            update_result = subjective_tests_collection.update_one(
+                {
+                    "_id": test_id,
+                    "submissions.student_id": student_id
+                },
+                {
+                    "$set": {
+                        "submissions.$.analysis": analysis_results
+                    }
+                }
+            )
+            
+            if update_result.modified_count == 0:
+                print("Warning: Analysis results not saved to database")
+                
+        except Exception as e:
+            print(f"Error updating database with analysis: {str(e)}")
+        
+        return analysis_results
+        
+    except Exception as e:
+        print(f"Error in analyze_subjective_answers: {str(e)}")
+        return None
+    
+def display_subjective_analysis(test_id, student_id, context):
+    """Display subjective test analysis to students and faculty"""
+    try:
+        test_doc = subjective_tests_collection.find_one({"_id": test_id})
+        submission = next(
+            (sub for sub in test_doc.get('submissions', []) if sub['student_id'] == student_id),
+            None
+        )
+        
+        if not submission:
+            st.warning("No submission found for analysis.")
+            return
+            
+        # Get or generate analysis
+        analysis = submission.get('analysis')
+        if not analysis:
+            analysis = analyze_subjective_answers(test_id, student_id, context)
+            if not analysis:
+                st.error("Could not generate analysis.")
+                return
+        
+        # Display analysis results
+        st.subheader("Answer Analysis")
+        
+        # Similarity score
+        similarity = analysis.get('similarity_score', 0) * 100
+        st.metric("Content Relevance Score", f"{similarity:.1f}%")
+        
+        # Content analysis
+        st.markdown("### Content Analysis")
+        st.markdown(analysis.get('content_analysis', 'No analysis available'))
+        
+        # Improvement suggestions
+        st.markdown("### Suggested Improvements")
+        st.markdown(analysis.get('suggested_improvements', 'No suggestions available'))
+        
+        # Analysis timestamp
+        analyzed_at = analysis.get('analyzed_at')
+        if analyzed_at:
+            st.caption(f"Analysis performed at: {analyzed_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            
+    except Exception as e:
+        st.error(f"Error displaying analysis: {e}")
