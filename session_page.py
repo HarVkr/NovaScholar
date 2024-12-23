@@ -761,9 +761,6 @@ def display_preclass_analytics(session, course_id):
         st.markdown(f"**Status:** {student_data['Status']}")
         st.markdown(f"**Total Messages:** {student_data['Messages']}")
         
-        
-
-
         # Display chat history in a table
         if chat_history:
             chat_df = pd.DataFrame(chat_history)
@@ -946,7 +943,6 @@ def display_inclass_analytics(session, course_id):
             key='download-csv'
         )
     
-
 def display_postclass_analytics(session, course_id):
     """Display post-class analytics for faculty"""
     st.subheader("Post-class Analytics")
@@ -1404,8 +1400,8 @@ def submit_subjective_test(test_id, student_id, student_answers):
         print(f"Error submitting subjective test: {str(e)}", flush=True)
         return False
     
+# session_page.py
 def judge_subjective_test_answers(test_id, student_id):
-    # Fetch submission from subjective_tests_collection
     test_doc = subjective_tests_collection.find_one({"_id": test_id})
     submission = next(
         (sub for sub in test_doc.get('submissions', []) if sub['student_id'] == student_id),
@@ -1414,17 +1410,44 @@ def judge_subjective_test_answers(test_id, student_id):
     if not submission:
         return
 
-    # Combine all answers into text
+    # Combine answers
     answers_text = "\n".join(submission['answers'])
 
-    # Get Perplexity analysis
-    analyzer = GoalAnalyzer(...)  # Provide necessary args
-    analysis = analyzer.get_perplexity_analysis(answers_text, "SubjectiveTestAnalysis")
+    # 1. Get Perplexity (or LLM) analysis
+    analyzer = GoalAnalyzer(api_key=PERPLEXITY_API_KEY)
+    analysis = asyncio.run(analyzer.get_perplexity_analysis(answers_text, "SubjectiveTestAnalysis"))
 
-    # Store analysis back into the submission
+    # 2. Get correctness score from OpenAI LLM
+    correctness = derive_analytics(
+        goal="Correctness Score",
+        reference_text=answers_text,
+        openai_api_key=OPENAI_API_KEY
+    )
+
+    # 3. Suggest improvements (from [modules/analytics.py](modules/analytics.py))
+    suggestions = derive_analytics(
+        goal="Improve Answer",
+        reference_text=answers_text,
+        openai_api_key=OPENAI_API_KEY
+    )
+
+    # 4. Additional frequent word/concept analysis
+    from collections import Counter
+    words = answers_text.split()
+    word_count = Counter(words)
+    most_common_words = word_count.most_common(5)  # Top 5 frequent words
+
+    # 5. Store results for both faculty & student
     subjective_tests_collection.update_one(
         {"_id": test_id, "submissions.student_id": student_id},
-        {"$set": {"submissions.$.analysis": analysis}}
+        {
+            "$set": {
+                "submissions.$.analysis": analysis,
+                "submissions.$.correctness": correctness,
+                "submissions.$.suggestions": suggestions,
+                "submissions.$.common_words": most_common_words
+            }
+        }
     )
 
 def display_subjective_test_tab(student_id, course_id, session_id):
