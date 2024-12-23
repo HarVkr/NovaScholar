@@ -36,6 +36,7 @@ def cosine_similarity(v1, v2):
     norm_product = norm(v1) * norm(v2)
     return dot_product / norm_product if norm_product != 0 else 0
 
+# analytics.py
 def derive_analytics(goal, reference_text, openai_api_key, context=None):
     """
     Analyze subjective answers with respect to pre-class materials and provide detailed feedback
@@ -58,11 +59,7 @@ def derive_analytics(goal, reference_text, openai_api_key, context=None):
     2. Structure the output in markdown with four sections:
 
     **Correctness Assessment**
-    - Evaluate the accuracy of statements and concepts used
-    - Compare with reference materials (if provided)
-    - Identify any misconceptions or errors
-    - Assess the depth of understanding shown
-    - Rate overall correctness (High/Medium/Low) with justification
+    - Rate overall correctness on a scale of 1-10
 
     **Content Analysis**
     - Analyze how well the answer addresses the question
@@ -93,13 +90,7 @@ def derive_analytics(goal, reference_text, openai_api_key, context=None):
     Rules:
     - Base assessment strictly on provided content
     - Be specific in feedback and suggestions
-    - Reference pre-class materials when available
-    - Maintain a constructive tone
-    - Focus on both strengths and areas for improvement
-    - Provide actionable feedback
-    - Do NOT use bullet points or lists in the output
-    - Present each section in paragraph form
-    - Keep feedback specific to the subject matter"""
+    """
 
     client = OpenAI(api_key=openai_api_key)
     response = client.chat.completions.create(
