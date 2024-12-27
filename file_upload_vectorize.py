@@ -124,12 +124,12 @@ def get_embedding(text):
     return response.data[0].embedding
 
 def create_vector_store(text, resource_id):
-    resource_object_id = ObjectId(resource_id)
+    # resource_object_id = ObjectId(resource_id)
     document = Document(text=text)
     embedding = get_embedding(text)
     
     vector_data = {
-        "resource_id": resource_object_id,
+        "resource_id": resource_id,
         "vector": embedding,
         "text": text,
         "created_at": datetime.utcnow()

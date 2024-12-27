@@ -1,3 +1,5 @@
+from collections import defaultdict
+import json
 import random
 import streamlit as st
 from datetime import datetime
@@ -13,12 +15,20 @@ from dotenv import load_dotenv
 import os
 from pymongo import MongoClient
 from gen_mcqs import generate_mcqs, save_quiz, quizzes_collection, get_student_quiz_score, submit_quiz_answers
+from create_course import courses_collection
+from pre_class_analytics import NovaScholarAnalytics
+import openai
+from openai import OpenAI
+
+
 
 load_dotenv()
 MONGO_URI = os.getenv('MONGO_URI')
+OPENAI_KEY = os.getenv('OPENAI_KEY')
 client = MongoClient(MONGO_URI)
 db = client["novascholar_db"]
 polls_collection = db["polls"]
+
 
 def get_current_user():
     if 'current_user' not in st.session_state:
@@ -133,14 +143,18 @@ def display_preclass_content(session, student_id, course_id):
                 if st.button("Mark PDF as Read", key=f"pdf_{material['file_name']}"):
                     create_notification("PDF marked as read!", "success")
 
+    # Initialize 'messages' in session_state if it doesn't exist
+    if 'messages' not in st.session_state:
+        st.session_state.messages = []
+
     # Chat input
     # Add a check, if materials are available, only then show the chat input
     if(st.session_state.user_type == "student"):
         if materials:
             if prompt := st.chat_input("Ask a question about Pre-class Materials"):
-                if len(st.session_state.messages) >= 20:
-                    st.warning("Message limit (20) reached for this session.")
-                    return
+                # if len(st.session_state.messages) >= 20:
+                #     st.warning("Message limit (20) reached for this session.")
+                #     return
 
                 st.session_state.messages.append({"role": "user", "content": prompt})
 
@@ -150,14 +164,20 @@ def display_preclass_content(session, student_id, course_id):
 
                 # Get document context
                 context = ""
+                print(session['session_id'])
                 materials = resources_collection.find({"session_id": session['session_id']})
+                print(materials)
                 context = ""
                 vector_data = None
 
+                # for material in materials:
+                #     print(material)
                 context = ""
                 for material in materials:
                     resource_id = material['_id']
+                    print(resource_id)
                     vector_data = vectors_collection.find_one({"resource_id": resource_id})
+                    # print(vector_data)
                     if vector_data and 'text' in vector_data:
                         context += vector_data['text'] + "\n"
 
@@ -167,15 +187,33 @@ def display_preclass_content(session, student_id, course_id):
 
                 try:
                     # Generate response using Gemini
-                    context_prompt = f"""
-                    Based on the following context, answer the user's question:
+                    # context_prompt = f"""
+                    # Based on the following context, answer the user's question:
                     
+                    # Context:
+                    # {context}
+                    
+                    # Question: {prompt}
+                    
+                    # Please provide a clear and concise answer based only on the information provided in the context.
+                    # """
+                    context_prompt = f"""
+                    You are a highly intelligent and resourceful assistant capable of synthesizing information from the provided context. 
+
                     Context:
                     {context}
-                    
+
+                    Instructions:
+                    1. Base your answers primarily on the given context. 
+                    2. If the answer to the user's question is not explicitly in the context but can be inferred or synthesized from the information provided, do so thoughtfully.
+                    3. Only use external knowledge or web assistance when:
+                    - The context lacks sufficient information, and
+                    - The question requires knowledge beyond what can be reasonably inferred from the context.
+                    4. Clearly state if you are relying on web assistance for any part of your answer.
+
                     Question: {prompt}
-                    
-                    Please provide a clear and concise answer based only on the information provided in the context.
+
+                    Please provide a clear and comprehensive answer based on the above instructions.
                     """
 
                     response = model.generate_content(context_prompt)
@@ -229,10 +267,10 @@ def display_preclass_content(session, student_id, course_id):
                 if file_content:
                     material_type = st.selectbox("Select Material Type", ["pdf", "docx", "txt"])
                     if st.button("Upload Material"):
-                        upload_resource(course_id, session['session_id'], file_name, uploaded_file, material_type)
+                        resource_id = upload_resource(course_id, session['session_id'], file_name, uploaded_file, material_type)
 
                         # Search for the newly uploaded resource's _id in resources_collection
-                        resource_id = resources_collection.find_one({"file_name": file_name})["_id"]
+                        # resource_id = resources_collection.find_one({"file_name": file_name})["_id"]
                         create_vector_store(file_content, resource_id)
                         st.success("Material uploaded successfully!")
 
@@ -979,6 +1017,205 @@ def display_postclass_analytics(session, course_id):
                 for student in pending_students:
                     st.markdown(f"- {student.get('full_name', 'Unknown Student')} (SID: {student.get('SID', 'Unknown SID')})")
 
+def get_chat_history(user_id, session_id):
+    query = {
+        "user_id": ObjectId(user_id),
+        "session_id": session_id,
+        "timestamp": {"$lte": datetime.utcnow()}
+    }
+    result = chat_history_collection.find(query)
+    return list(result)
+
+def get_response_from_llm(raw_data):
+    messages = [
+        {
+            "role": "system",
+            "content": "You are an AI that refines raw analytics data into actionable insights for faculty reports."
+        },
+        {
+            "role": "user",
+            "content": f"""
+            Based on the following analytics data, refine and summarize the insights:
+
+            Raw Data:
+            {raw_data}
+
+            Instructions:
+            1. Group similar topics together under appropriate categories.
+            2. Remove irrelevant or repetitive entries.
+            3. Summarize the findings into actionable insights.
+            4. Provide concise recommendations for improvement based on the findings.
+
+            Output:
+            Provide a structured response with the following format:
+            {{
+            "Low Engagement Topics": ["List of Topics"],
+            "Frustration Areas": ["List of areas"],
+            "Recommendations": ["Actionable recommendations"],
+            }}
+            """
+        }
+    ]
+    try:
+        client = OpenAI(api_key=OPENAI_KEY)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            temperature=0.2
+        )
+        content = response.choices[0].message.content
+        return json.loads(content) 
+    
+    except Exception as e:
+        st.error(f"Error generating response: {str(e)}")
+        return None
+
+def get_preclass_analytics(session):
+    """Get all user_ids from chat_history collection where session_id matches"""
+    user_ids = chat_history_collection.distinct("user_id", {"session_id": session['session_id']})
+    print(user_ids)
+    session_id = session['session_id']
+
+    all_chat_histories = []
+
+    for user_id in user_ids:
+        result = get_chat_history(user_id, session_id)
+        if result:
+            for record in result:
+                chat_history = {
+                    "user_id": record["user_id"],
+                    "session_id": record["session_id"],
+                    "messages": record["messages"]
+                }
+                all_chat_histories.append(chat_history)
+        else:
+            st.warning("No chat history found for this session.")
+    
+    # Use the analytics engine
+    analytics_engine = NovaScholarAnalytics()
+    results = analytics_engine.process_chat_history(all_chat_histories)
+    faculty_report = analytics_engine.generate_faculty_report(results)
+    
+    # Pass this Faculty Report to an LLM model for refinements and clarity
+    refined_report = get_response_from_llm(faculty_report)
+    return refined_report
+
+def display_preclass_analytics2(session, course_id):
+    refined_report = get_preclass_analytics(session)
+    st.subheader("Pre-class Analytics")
+    if refined_report:
+        # Custom CSS to improve the look and feel
+        st.markdown("""
+            <style>
+            .metric-card {
+                background-color: #f8f9fa;
+                border-radius: 10px;
+                padding: 20px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .header-text {
+                color: #1f77b4;
+                font-size: 24px;
+                font-weight: bold;
+                margin-bottom: 20px;
+            }
+            .subheader {
+                color: #2c3e50;
+                font-size: 17px;
+                font-weight: 500;
+                margin-bottom: 10px;
+            }
+            .insight-text {
+                color: #34495e;
+                font-size: 16px;
+                line-height: 1.6;
+            }
+            .glossary-card {
+                padding: 15px;
+                margin-top: 40px;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        # Header
+        # st.markdown("<h1 style='text-align: center; color: #2c3e50;'>Pre-Class Analytics Dashboard</h1>", unsafe_allow_html=True)
+        # st.markdown("<p style='text-align: center; color: #7f8c8d;'>Insights from Student Interactions</p>", unsafe_allow_html=True)
+        
+        # Create three columns for metrics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("<p class='header-text'>🎯 Low Engagement Topics</p>", unsafe_allow_html=True)
+            
+            # Group topics by category
+            topics = refined_report["Low Engagement Topics"]
+            # categories = defaultdict(list)
+            for i, topic in enumerate(topics):
+                st.markdown(f"{i + 1}.  <p class='subheader'>{topic}</p>", unsafe_allow_html=True)
+
+            # # Categorize topics (you can modify these categories based on your needs)
+            # for topic in topics:
+            #     if "Data" in topic and ("Type" in topic or "Structure" in topic):
+            #         categories["Data Types"].append(topic)
+            #     elif "Analytics" in topic:
+            #         categories["Analytics Concepts"].append(topic)
+            #     else:
+            #         categories["General Concepts"].append(topic)
+            
+            # Display categorized topics
+            # for category, items in categories.items():
+            #     st.markdown(f"<p class='subheader'>{category}</p>", unsafe_allow_html=True)
+            #     i = 0
+            #     for i, item in items:
+            #         st.markdown(f"{i + 1} {item}", unsafe_allow_html=True)
+
+        with col2:
+            st.markdown("<p class='header-text'>⚠️ Frustration Areas</p>", unsafe_allow_html=True)
+            for i, area in enumerate(refined_report["Frustration Areas"]):
+                st.markdown(f"{i + 1}.  <p class='subheader'>{area}</p>", unsafe_allow_html=True)
+
+        with col3:
+            st.markdown("<p class='header-text'>💡 Recommendations</p>", unsafe_allow_html=True)
+            for i, rec in enumerate(refined_report["Recommendations"]):
+                st.markdown(f"{i + 1}.  <p class='subheader'>{rec}</p>", unsafe_allow_html=True)
+
+        # Glossary section
+        st.markdown("<div class='glossary-card'>", unsafe_allow_html=True)
+        # st.markdown("<h3 style='color: #2c3e50;'>Understanding the Metrics</h3>", unsafe_allow_html=True)
+        
+        explanations = {
+            "Low Engagement Topics": "Topics where students showed minimal interaction or understanding during their chat sessions. These areas may require additional focus during classroom instruction.",
+            "Frustration Areas": "Specific concepts or topics where students expressed difficulty or confusion during their interactions with the chatbot. These areas may need immediate attention or alternative teaching approaches.",
+            "Recommendations": "AI-generated suggestions for improving student engagement and understanding, based on the analyzed chat interactions and identified patterns."
+        }
+        
+        st.subheader("Understanding the Metrics")
+
+        for metric, explanation in explanations.items():
+            # st.markdown(f"<p class='subheader'>{metric}</p>", unsafe_allow_html=True)
+            # st.markdown(f"<p class='insight-text'>{explanation}</p>", unsafe_allow_html=True)
+            st.markdown(f"<span class='subheader'>**{metric}**</span>:  <span class='subheader'>{explanation}</span>", unsafe_allow_html=True)
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+def display_session_analytics(session, course_id):
+    """Display session analytics for faculty"""
+    st.header("Session Analytics")
+
+    # Display Pre-class Analytics
+    display_preclass_analytics2(session, course_id)
+
+    # Display In-class Analytics
+    display_inclass_analytics(session, course_id)
+
+    # Display Post-class Analytics
+    display_postclass_analytics(session, course_id)
+
+
+
+
+
 def upload_preclass_materials(session_id, course_id):
     """Upload pre-class materials for a session"""
     st.subheader("Upload Pre-class Materials")
@@ -1069,7 +1306,7 @@ def display_quiz_tab(student_id, course_id, session_id):
                             st.error("Error submitting quiz. Please try again.")
 
 def display_session_content(student_id, course_id, session, username, user_type):
-    st.title(f"Session {session['session_id']}: {session['title']}")
+    st.title(f"{session['title']}")
 
     # Check if the date is a string or a datetime object
     if isinstance(session['date'], str):
@@ -1078,21 +1315,23 @@ def display_session_content(student_id, course_id, session, username, user_type)
     else:
         session_date = session['date']
 
-    st.markdown(f"**Date:** {format_datetime(session_date)}")
-    st.markdown(f"**Status:** {session['status'].replace('_', ' ').title()}")
+    course_name = courses_collection2.find_one({"course_id": course_id})['title']
     
+    st.markdown(f"**Date:** {format_datetime(session_date)}")
+    st.markdown(f"**Course Name:** {course_name}")
+
     # Find the course_id of the session in 
 
     if st.session_state.user_type == 'student':
         tabs = (["Pre-class Work", "In-class Work", "Post-class Work"])
     else:
-        tabs = (["Pre-class Analytics", "In-class Analytics", "Post-class Analytics"])
+        tabs = (["Session Analytics"])
 
     if st.session_state.user_type == 'student':
         pre_class_tab, in_class_tab, post_class_tab, quiz_tab = st.tabs(["Pre-class Work", "In-class Work", "Post-class Work", "Quizzes"])
     else:
         pre_class_work, in_class_work, post_class_work, preclass_analytics, inclass_analytics, postclass_analytics = st.tabs(["Pre-class Work", "In-class Work", "Post-class Work", "Pre-class Analytics", "In-class Analytics", "Post-class Analytics"])
-
+        # pre_class_work, in_class_work, post_class_work, session_analytics = st.tabs(["Pre-class Work", "In-class Work", "Post-class Work", "Session Analytics"])
     # Display pre-class materials
     if st.session_state.user_type == 'student':
         with pre_class_tab:
@@ -1114,8 +1353,10 @@ def display_session_content(student_id, course_id, session, username, user_type)
         with post_class_work:
             display_post_class_content(session, student_id, course_id)
         with preclass_analytics:
-            display_preclass_analytics(session, course_id)
+            display_preclass_analytics2(session, course_id)
         with inclass_analytics:
             display_inclass_analytics(session, course_id)
         with postclass_analytics:
             display_postclass_analytics(session, course_id)
+        # with session_analytics: 
+        #     display_session_analytics(session, course_id)

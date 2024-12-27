@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timedelta
 from pathlib import Path
 from utils.sample_data import SAMPLE_COURSES, SAMPLE_SESSIONS
 from session_page import display_session_content
@@ -14,9 +14,14 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
-
+from create_course import create_course, courses_collection, generate_perplexity_response, PERPLEXITY_API_KEY
+import json
+from bson import ObjectId
 client = OpenAI(api_key=os.getenv("OPENAI_KEY"))
+from dotenv import load_dotenv
 
+load_dotenv()
+# PERPLEXITY_API_KEY = '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'
 
 def get_research_papers(query):
     """Get research paper recommendations based on query"""
@@ -74,7 +79,12 @@ def init_session_state():
         st.session_state.selected_course = None
     if "show_create_course_form" not in st.session_state:
         st.session_state.show_create_course_form = False
-
+    if "show_create_session_form" not in st.session_state:
+        st.session_state.show_create_session_form = False
+    if "show_enroll_course_page" not in st.session_state:
+        st.session_state.show_enroll_course_page = False
+    if "course_to_enroll" not in st.session_state:
+        st.session_state.course_to_enroll = None
 
 def login_user(username, password, user_type):
     """Login user based on credentials"""
@@ -127,7 +137,18 @@ def get_courses(username, user_type):
             courses = courses_collection2.find(
                 {"course_id": {"$in": enrolled_course_ids}}
             )
-            # course_titles = [course['title'] for course in courses]
+            # courses += courses_collection2.find(
+            #     {"course_id": {"$in": enrolled_course_ids}}
+            # )
+            # # course_titles = [course['title'] for course in courses]
+            # return list(courses)
+            # courses_cursor1 = courses_collection.find(
+            #     {"course_id": {"$in": enrolled_course_ids}}
+            # )
+            # courses_cursor2 = courses_collection2.find(
+            #     {"course_id": {"$in": enrolled_course_ids}}
+            # )
+            # courses = list(courses_cursor1) + list(courses_cursor2)
             return list(courses)
     elif user_type == "faculty":
         faculty = faculty_collection.find_one({"full_name": username})
@@ -497,69 +518,308 @@ def register_page():
 
 # Create Course feature
 def create_course_form(faculty_name, faculty_id):
-    """Display form to create a new course"""
+    """Display enhanced form to create a new course with AI-generated content"""
     st.title("Create New Course")
-    faculty = faculty_collection.find_one({"_id": faculty_id})
-    if not faculty:
-        st.error("Faculty not found")
-        return
-    faculty_str_id = faculty["TID"]
+    
+    if 'course_plan' not in st.session_state:
+        st.session_state.course_plan = None
+    if 'edit_mode' not in st.session_state:
+        st.session_state.edit_mode = False
 
-    with st.form("create_course_form"):
-        course_title = st.text_input("Course Title")
-        course_description = st.text_area("Course Description")
-        start_date = st.date_input("Start Date")
-        end_date = st.date_input("End Date")
-        duration = -(
-            -((end_date - start_date).days) // 7
-        )  # Ceiling division to round up to the next week
+    # Initial Course Creation Form
+    if not st.session_state.course_plan:
+        with st.form("initial_course_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                course_name = st.text_input("Course Name", placeholder="e.g., Introduction to Computer Science")
+                faculty_info = st.text_input("Faculty", value=faculty_name, disabled=True)
+            with col2:
+                duration_weeks = st.number_input("Duration (weeks)", min_value=1, max_value=16, value=12)
+                start_date = st.date_input("Start Date")
+            
+            generate_button = st.form_submit_button("Generate Course Structure", use_container_width=True)
+            
+            if generate_button and course_name:
+                with st.spinner("Generating course structure..."):
+                    try:
+                        course_plan = generate_perplexity_response(PERPLEXITY_API_KEY, course_name)
+                        # print(course_plan)
+                        st.session_state.course_plan = json.loads(course_plan)
+                        st.session_state.start_date = start_date
+                        st.session_state.duration_weeks = duration_weeks
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error generating course structure: {e}")
+    
+    # Display and Edit Generated Course Content
+    if st.session_state.course_plan:
+        with st.expander("Course Overview", expanded=True):
+            if not st.session_state.edit_mode:
+                st.subheader(st.session_state.course_plan['course_title'])
+                st.write(st.session_state.course_plan['course_description'])
+                edit_button = st.button("Edit Course Details", use_container_width=True)
+                if edit_button:
+                    st.session_state.edit_mode = True
+                    st.rerun()
+            else:
+                with st.form("edit_course_details"):
+                    st.session_state.course_plan['course_title'] = st.text_input(
+                        "Course Title", 
+                        value=st.session_state.course_plan['course_title']
+                    )
+                    st.session_state.course_plan['course_description'] = st.text_area(
+                        "Course Description", 
+                        value=st.session_state.course_plan['course_description']
+                    )
+                    if st.form_submit_button("Save Course Details"):
+                        st.session_state.edit_mode = False
+                        st.rerun()
+        
+        # Display Modules and Sessions
+        st.subheader("Course Modules and Sessions")
+        
+        start_date = st.session_state.start_date
+        current_date = start_date
+        
+        all_sessions = []
+        for module_idx, module in enumerate(st.session_state.course_plan['modules']):
+            with st.expander(f"📚 Module {module_idx + 1}: {module['module_title']}", expanded=True):
+                # Edit module title
+                new_module_title = st.text_input(
+                    f"Module {module_idx + 1} Title",
+                    value=module['module_title'],
+                    key=f"module_{module_idx}"
+                )
+                module['module_title'] = new_module_title
+                
+                for sub_idx, sub_module in enumerate(module['sub_modules']):
+                    st.markdown(f"### 📖 {sub_module['title']}")
+                    
+                    # Create sessions for each topic
+                    for topic_idx, topic in enumerate(sub_module['topics']):
+                        session_key = f"session_{module_idx}_{sub_idx}_{topic_idx}"
+                        
+                        with st.container():
+                            col1, col2, col3 = st.columns([3, 2, 1])
+                            with col1:
+                                new_topic = st.text_input(
+                                    "Topic",
+                                    value=topic,
+                                    key=f"{session_key}_topic"
+                                )
+                                sub_module['topics'][topic_idx] = new_topic
+                            
+                            with col2:
+                                session_date = st.date_input(
+                                    "Session Date",
+                                    value=current_date,
+                                    key=f"{session_key}_date"
+                                )
+                            
+                            with col3:
+                                session_status = st.selectbox(
+                                    "Status",
+                                    options=["upcoming", "in-progress", "completed"],
+                                    key=f"{session_key}_status"
+                                )
+                            
+                            # Create session object
+                            session = {
+                                "session_id": str(ObjectId()),
+                                "title": new_topic,
+                                "date": datetime.combine(session_date, datetime.min.time()),
+                                "status": session_status,
+                                "module_name": module['module_title'],
+                                "created_at": datetime.utcnow(),
+                                "pre_class": {
+                                    "resources": [],
+                                    "completion_required": True
+                                },
+                                "in_class": {
+                                    "quiz": [],
+                                    "polls": []
+                                },
+                                "post_class": {
+                                    "assignments": []
+                                }
+                            }
+                            all_sessions.append(session)
+                            current_date = session_date + timedelta(days=7)
+        
+        new_course_id = get_new_course_id()
+        course_title = st.session_state.course_plan['course_title']
+        # Final Save Button
+        if st.button("Save Course", type="primary", use_container_width=True):
+            try:
+                course_doc = {
+                    "course_id": new_course_id,
+                    "title": course_title,
+                    "description": st.session_state.course_plan['course_description'],
+                    "faculty": faculty_name,
+                    "faculty_id": faculty_id,
+                    "duration": f"{st.session_state.duration_weeks} weeks",
+                    "start_date": datetime.combine(st.session_state.start_date, datetime.min.time()),
+                    "created_at": datetime.utcnow(),
+                    "sessions": all_sessions
+                }
+                
+                # Insert into database
+                courses_collection.insert_one(course_doc)
+                
+                st.success("Course successfully created!")
 
-        if st.form_submit_button("Create Course"):
-            new_course_id = get_new_course_id()
-            course = {
-                "course_id": new_course_id,
-                "title": course_title,
-                "description": course_description,
-                "faculty": faculty_name,
-                "faculty_id": faculty_str_id,
-                # "start_date": start_date.isoformat(),
-                # "end_date": end_date.isoformat(),
-                "start_date": datetime.combine(
-                    start_date, datetime.min.time()
-                ),  # Store as datetime
-                "end_date": datetime.combine(
-                    end_date, datetime.min.time()
-                ),  # Store as datetime
-                "duration": f"{duration} weeks",
-                "created_at": datetime.utcnow(),
-                "sessions": [],
-            }
-
-            # Insert course into courses collection
-            courses_collection2.insert_one(course)
-
-            # Update faculty's courses_taught array
-            faculty_collection.update_one(
-                {"_id": st.session_state.user_id},
-                {
-                    "$push": {
-                        "courses_taught": {
-                            "course_id": new_course_id,
-                            "title": course_title,
+                # Update faculty collection
+                faculty_collection.update_one(
+                    {"_id": st.session_state.user_id},
+                    {
+                        "$push": {
+                            "courses_taught": {
+                                "course_id": new_course_id,
+                                "title": course_title,
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
 
-            st.success(f"Course created successfully with ID: {new_course_id}")
-            st.session_state.show_create_course_form = False
-            st.rerun()
+                # Clear session state
+                st.session_state.course_plan = None
+                st.session_state.edit_mode = False
+                
+                # Optional: Add a button to view the created course
+                if st.button("View Course"):
+                    # Add navigation logic here
+                    pass
+                
+            except Exception as e:
+                st.error(f"Error saving course: {e}")
+    
 
 
 from research_assistant_dashboard import display_research_assistant_dashboard
 
 from goals2 import display_analyst_dashboard
 
+
+def enroll_in_course(course_id, course_title, student):
+    """Enroll a student in a course"""
+    if student:
+        courses = student.get("enrolled_courses", [])
+        if course_id not in [course["course_id"] for course in courses]:
+            course = courses_collection.find_one({"course_id": course_id})
+            if course:
+                courses.append(
+                    {
+                        "course_id": course["course_id"],
+                        "title": course["title"],
+                    }
+                )
+                students_collection.update_one(
+                    {"_id": st.session_state.user_id},
+                    {"$set": {"enrolled_courses": courses}},
+                )
+                st.success(f"Enrolled in course {course_title}")
+            else:
+                st.error("Course not found")
+        else:
+            st.warning("Already enrolled in this course")
+
+# def enroll_in_course_page(course_id):
+#     """Enroll a student in a course"""
+#     student = students_collection.find_one({"_id": st.session_state.user_id})
+#     course_title = courses_collection.find_one({"course_id": course_id})["title"]
+
+#     course = courses_collection.find_one({"course_id": course_id})
+#     if course:
+#         st.title(course["title"])
+#         st.subheader("Course Description:")
+#         st.write(course["description"])
+#         st.write(f"Faculty: {course['faculty']}")
+#         st.write(f"Duration: {course['duration']}")
+
+#         st.title("Course Sessions")
+#         for session in course["sessions"]:
+#             st.write(f"Session: {session['title']}")
+#             st.write(f"Date: {session['date']}")
+#             st.write(f"Status: {session['status']}")
+#             st.write("----")
+#     else:
+#         st.error("Course not found")
+
+#     enroll_button = st.button("Enroll in Course", key="enroll_button", use_container_width=True)
+#     if enroll_button:
+#         enroll_in_course(course_id, course_title, student)
+def enroll_in_course_page(course_id):
+    """Display an aesthetically pleasing course enrollment page"""
+    student = students_collection.find_one({"_id": st.session_state.user_id})
+    course = courses_collection.find_one({"course_id": course_id})
+    
+    if not course:
+        st.error("Course not found")
+        return
+        
+    # Create two columns for layout
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Course header section
+        st.title(course["title"])
+        st.markdown(f"*{course['description']}*")
+        
+        # Course details in an expander
+        with st.expander("Course Details", expanded=True):
+            st.markdown(f"👨‍🏫 **Faculty:** {course['faculty']}")
+            st.markdown(f"⏱️ **Duration:** {course['duration']}")
+        
+        # Sessions in a clean card-like format
+        st.subheader("📚 Course Sessions")
+        for idx, session in enumerate(course["sessions"], 1):
+            with st.container():
+                st.markdown(f"""
+                ---
+                ### Session {idx}: {session['title']}
+                🗓️ **Date:** {session['date']}  
+                📌 **Status:** {session['status']}
+                """)
+    
+    with col2:
+        with st.container():
+            st.markdown("### Ready to Learn?")
+            st.markdown("Click below to enroll in this course")
+            
+            # Check if already enrolled
+            courses = student.get("enrolled_courses", [])
+            is_enrolled = course_id in [c["course_id"] for c in courses]
+            
+            if is_enrolled:
+                st.info("✅ You are already enrolled in this course")
+            else:
+                enroll_button = st.button(
+                    "🎓 Enroll Now",
+                    key="enroll_button",
+                    use_container_width=True
+                )
+                if enroll_button:
+                    enroll_in_course(course_id, course["title"], student)
+
+def show_available_courses(username, user_type, user_id):
+    """Display available courses for enrollment"""
+    st.title("Available Courses")
+    
+    courses = list(courses_collection2.find({}, {"course_id": 1, "title": 1}))
+    course_options = [
+        f"{course['title']} ({course['course_id']})" for course in courses
+    ]
+    
+    selected_course = st.selectbox("Select a Course to Enroll", course_options)
+    # if selected_courses:
+    #     for course in selected_courses:
+    #         course_id = course.split("(")[-1][:-1]
+    #         course_title = course.split(" (")[0]
+    #         enroll_in_course(course_id, course_title, user_id)
+    #     st.success("Courses enrolled successfully!")
+    if selected_course:
+        course_id = selected_course.split("(")[-1][:-1]
+        enroll_in_course_page(course_id)
 
 def main_dashboard():
     if st.session_state.user_type == "research_assistant":
@@ -580,6 +840,20 @@ def main_dashboard():
             enrolled_courses = get_courses(
                 st.session_state.username, st.session_state.user_type
             )
+
+            # Enroll in Courses
+            if st.session_state.user_type == "student":
+                if st.button(
+                    "Enroll in a New Course", key="enroll_course", use_container_width=True
+                ):
+                    st.session_state.show_enroll_course_page = True
+                
+            # if st.session_state.show_enroll_course_form: 
+            #     courses = list(courses_collection.find({}, {"course_id": 1, "title": 1}))
+            #     courses += list(courses_collection2.find({}, {"course_id": 1, "title": 1}))
+            #     course_options = [f"{course['title']} ({course['course_id']})" for course in courses]
+            #     course_to_enroll = st.selectbox("Available Courses", course_options)
+            #     st.session_state.course_to_enroll = course_to_enroll
 
             if st.session_state.user_type == "faculty":
                 if st.button(
@@ -631,6 +905,8 @@ def main_dashboard():
             create_course_form(st.session_state.username, st.session_state.user_id)
         elif st.session_state.get("show_create_session_form"):
             create_session_form(selected_course_id)
+        elif st.session_state.get("show_enroll_course_page"):
+            show_available_courses(st.session_state.username, st.session_state.user_type, st.session_state.user_id)
         else:
             # Main content
             if "selected_session" in st.session_state:
