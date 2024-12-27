@@ -18,3 +18,7 @@ matplotlib
 scipy
 Pillow
 python-dotenv
+zoomus
+asyncio
+google-auth-oauthlib
+google-auth
