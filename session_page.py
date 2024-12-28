@@ -1470,6 +1470,8 @@ def display_session_content(student_id, course_id, session, username, user_type)
             "Post-class Work",
             "Quizzes",
             "Subjective Tests"
+            "Group Work",
+            "End Terms"
         ])
         with tabs[0]:
             display_preclass_content(session, student_id, course_id)
@@ -1481,6 +1483,12 @@ def display_session_content(student_id, course_id, session, username, user_type)
             display_quiz_tab(student_id, course_id, session['session_id'])
         with tabs[4]:
             display_subjective_test_tab(student_id, course_id, session['session_id'])
+        with tabs[5]:
+            st.subheader("Group Work")
+            st.info("Group work content will be available soon.")
+        with tabs[6]:
+            st.subheader("End Terms")
+            st.info("End term content will be available soon.")
     
     else:  # faculty user
         # Create all tabs at once for faculty
@@ -1490,7 +1498,8 @@ def display_session_content(student_id, course_id, session, username, user_type)
             "Post-class Work",
             "Pre-class Analytics",
             "In-class Analytics",
-            "Post-class Analytics"
+            "Post-class Analytics",
+            "End Terms"
         ])
         with tabs[0]:
             upload_preclass_materials(session['session_id'], course_id)
@@ -1504,6 +1513,9 @@ def display_session_content(student_id, course_id, session, username, user_type)
             display_inclass_analytics(session, course_id)
         with tabs[5]:
             display_postclass_analytics(session, course_id)
+        with tabs[6]:
+            st.subheader("End Terms")
+            st.info("End term content will be available soon.")
 
 def generate_subjective_questions(context, num_questions, session_title, session_description):
     """Generate subjective questions either from context or session details"""

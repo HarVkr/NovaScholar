@@ -1,3 +1,4 @@
+import re
 import streamlit as st
 from datetime import datetime, date, time, timedelta
 from pathlib import Path
@@ -89,7 +90,8 @@ def init_session_state():
 def login_user(username, password, user_type):
     """Login user based on credentials"""
     if user_type == "student":
-        user = students_collection.find_one({"full_name": username})
+        # user = students_collection.find_one({"full_name": username}) or students_collection.find_one({"username": username})
+        user = students_collection.find_one({"$or": [{"full_name": username}, {"username": username}]})
     elif user_type == "faculty":
         user = faculty_collection.find_one({"full_name": username})
     elif user_type == "research_assistant":
@@ -99,33 +101,61 @@ def login_user(username, password, user_type):
 
     if user and check_password_hash(user["password"], password):
         st.session_state.user_id = user["_id"]
+        print(st.session_state.user_id)
         st.session_state.authenticated = True
         st.session_state.user_type = user_type
         st.session_state.username = username
         return True
     return False
 
+# def login_form():
+#     """Display login form"""
+#     st.title("Welcome to NOVAScholar")
 
+#     with st.form("login_form"):
+        
+#         user_type = st.selectbox(
+#             "Please select your Role", ["student", "faculty", "research_assistant", "analyst"]
+#         )
+#         username = st.text_input("Username")
+#         password = st.text_input("Password", type="password")
+#         submit = st.form_submit_button("Login")
+
+#         if submit:
+#             if login_user(username, password, user_type):
+#                 st.success("Login successful!")
+#                 st.rerun()
+#             else:
+#                 st.error("Invalid credentials!")
 def login_form():
-    """Display login form"""
+    """Display enhanced login form"""
     st.title("Welcome to NOVAScholar")
 
     with st.form("login_form"):
+        col1, col2 = st.columns(2)
         
-        user_type = st.selectbox(
-            "Please select your Role", ["student", "faculty", "research_assistant", "analyst"]
-        )
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
+        with col1:
+            user_type = st.selectbox(
+                "Please select your Role",
+                ["student", "faculty", "research_assistant", "analyst"]
+            )
+            username = st.text_input("Username or Email")
+        
+        with col2:
+            password = st.text_input("Password", type="password")
+        
         submit = st.form_submit_button("Login")
 
         if submit:
+            # Handle both username and email login
+            if '@' in username:
+                username = extract_username(username)
+            
             if login_user(username, password, user_type):
                 st.success("Login successful!")
                 st.rerun()
             else:
                 st.error("Invalid credentials!")
-
 
 def get_courses(username, user_type):
     if user_type == "student":
@@ -428,94 +458,200 @@ def get_new_analyst_id():
     return new_id
 
 
+# def register_page():
+#     st.title("Register")
+#     if "user_type" not in st.session_state:
+#         st.session_state.user_type = "student"
+
+#     # Select user type
+#     st.session_state.user_type = st.selectbox(
+#         "Please select your Role", ["student", "faculty", "research_assistant", "analyst"]
+#     )
+#     user_type = st.session_state.user_type
+#     print(user_type)
+
+#     with st.form("register_form"):
+
+#         full_name = st.text_input("Full Name")
+#         password = st.text_input("Password", type="password")
+#         confirm_password = st.text_input("Confirm Password", type="password")
+
+#         if user_type == "student":
+#             # Fetch courses for students to select from
+#             courses = list(courses_collection.find({}, {"course_id": 1, "title": 1}))
+#             course_options = [
+#                 f"{course['title']} ({course['course_id']})" for course in courses
+#             ]
+#             selected_courses = st.multiselect("Available Courses", course_options)
+
+#         submit = st.form_submit_button("Register")
+
+#         if submit:
+#             if password == confirm_password:
+#                 hashed_password = generate_password_hash(password)
+#                 if user_type == "student":
+#                     new_student_id = get_new_student_id()
+#                     enrolled_courses = [
+#                         {
+#                             "course_id": course.split("(")[-1][:-1],
+#                             "title": course.split(" (")[0],
+#                         }
+#                         for course in selected_courses
+#                     ]
+#                     students_collection.insert_one(
+#                         {
+#                             "SID": new_student_id,
+#                             "full_name": full_name,
+#                             "password": hashed_password,
+#                             "enrolled_courses": enrolled_courses,
+#                             "created_at": datetime.utcnow(),
+#                         }
+#                     )
+#                     st.success(
+#                         f"Student registered successfully with ID: {new_student_id}"
+#                     )
+#                 elif user_type == "faculty":
+#                     new_faculty_id = get_new_faculty_id()
+#                     faculty_collection.insert_one(
+#                         {
+#                             "TID": new_faculty_id,
+#                             "full_name": full_name,
+#                             "password": hashed_password,
+#                             "courses_taught": [],
+#                             "created_at": datetime.utcnow(),
+#                         }
+#                     )
+#                     st.success(
+#                         f"Faculty registered successfully with ID: {new_faculty_id}"
+#                     )
+#                 elif user_type == "research_assistant":
+#                     research_assistants_collection.insert_one(
+#                         {
+#                             "full_name": full_name,
+#                             "password": hashed_password,
+#                             "created_at": datetime.utcnow(),
+#                         }
+#                     )
+#                     st.success("Research Assistant registered successfully!")
+#                 elif user_type == "analyst":
+#                     # new_analyst_id = get_new_analyst_id()
+#                     analysts_collection.insert_one(
+#                         {
+#                             # "AID": new_analyst_id,
+#                             "full_name": full_name,
+#                             "password": hashed_password,
+#                             "created_at": datetime.utcnow(),
+#                         }
+#                     )
+#                     st.success("Analyst registered successfully!")
+#             else:
+#                 st.error("Passwords do not match")
 def register_page():
-    st.title("Register")
+    st.title("Register for NOVAScholar")
     if "user_type" not in st.session_state:
         st.session_state.user_type = "student"
 
     # Select user type
     st.session_state.user_type = st.selectbox(
-        "Select User Type", ["student", "faculty", "research_assistant", "analyst"]
+        "Please select your Role", 
+        ["student", "faculty", "research_assistant", "analyst"]
     )
     user_type = st.session_state.user_type
-    print(user_type)
 
     with st.form("register_form"):
-        full_name = st.text_input("Full Name")
-        password = st.text_input("Password", type="password")
-        confirm_password = st.text_input("Confirm Password", type="password")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            full_name = st.text_input("Full Name")
+            email = st.text_input("Institutional Email")
+            phone = st.text_input("Phone Number")
+        
+        with col2:
+            password = st.text_input("Password", type="password")
+            confirm_password = st.text_input("Confirm Password", type="password")
 
         if user_type == "student":
-            # Fetch courses for students to select from
-            courses = list(courses_collection2.find({}, {"course_id": 1, "title": 1}))
-            course_options = [
-                f"{course['title']} ({course['course_id']})" for course in courses
-            ]
+            courses = list(courses_collection.find({}, {"course_id": 1, "title": 1}))
+            course_options = [f"{course['title']} ({course['course_id']})" for course in courses]
             selected_courses = st.multiselect("Available Courses", course_options)
 
         submit = st.form_submit_button("Register")
 
         if submit:
-            if password == confirm_password:
-                hashed_password = generate_password_hash(password)
-                if user_type == "student":
-                    new_student_id = get_new_student_id()
-                    enrolled_courses = [
-                        {
-                            "course_id": course.split("(")[-1][:-1],
-                            "title": course.split(" (")[0],
-                        }
-                        for course in selected_courses
-                    ]
-                    students_collection.insert_one(
-                        {
-                            "SID": new_student_id,
-                            "full_name": full_name,
-                            "password": hashed_password,
-                            "enrolled_courses": enrolled_courses,
-                            "created_at": datetime.utcnow(),
-                        }
-                    )
-                    st.success(
-                        f"Student registered successfully with ID: {new_student_id}"
-                    )
-                elif user_type == "faculty":
-                    new_faculty_id = get_new_faculty_id()
-                    faculty_collection.insert_one(
-                        {
-                            "TID": new_faculty_id,
-                            "full_name": full_name,
-                            "password": hashed_password,
-                            "courses_taught": [],
-                            "created_at": datetime.utcnow(),
-                        }
-                    )
-                    st.success(
-                        f"Faculty registered successfully with ID: {new_faculty_id}"
-                    )
-                elif user_type == "research_assistant":
-                    research_assistants_collection.insert_one(
-                        {
-                            "full_name": full_name,
-                            "password": hashed_password,
-                            "created_at": datetime.utcnow(),
-                        }
-                    )
-                    st.success("Research Assistant registered successfully!")
-                elif user_type == "analyst":
-                    # new_analyst_id = get_new_analyst_id()
-                    analysts_collection.insert_one(
-                        {
-                            # "AID": new_analyst_id,
-                            "full_name": full_name,
-                            "password": hashed_password,
-                            "created_at": datetime.utcnow(),
-                        }
-                    )
-                    st.success("Analyst registered successfully!")
-            else:
-                st.error("Passwords do not match")
+            # Validate email
+            email_valid, email_msg = validate_email(email)
+            if not email_valid:
+                st.error(email_msg)
+                return
 
+            # Validate phone
+            phone_valid, phone_msg = validate_phone(phone)
+            if not phone_valid:
+                st.error(phone_msg)
+                return
+
+            # Validate password match
+            if password != confirm_password:
+                st.error("Passwords do not match")
+                return
+
+            # Extract username from email
+            username = extract_username(email)
+
+            # Check if username already exists
+            if user_type == "student":
+                existing_user = students_collection.find_one({"username": username})
+            elif user_type == "faculty":
+                existing_user = faculty_collection.find_one({"username": username})
+            elif user_type == "research_assistant":
+                existing_user = research_assistants_collection.find_one({"username": username})
+            elif user_type == "analyst":
+                existing_user = analysts_collection.find_one({"username": username})
+
+            if existing_user:
+                st.error("A user with this email already exists")
+                return
+
+            # Hash password and create user
+            hashed_password = generate_password_hash(password)
+            
+            user_data = {
+                "username": username,
+                "full_name": full_name,
+                "email": email,
+                "phone": phone,
+                "password": hashed_password,
+                "created_at": datetime.utcnow()
+            }
+
+            if user_type == "student":
+                new_student_id = get_new_student_id()
+                enrolled_courses = [
+                    {
+                        "course_id": course.split("(")[-1][:-1],
+                        "title": course.split(" (")[0],
+                    }
+                    for course in selected_courses
+                ]
+                user_data["SID"] = new_student_id
+                user_data["enrolled_courses"] = enrolled_courses
+                students_collection.insert_one(user_data)
+                st.success(f"Student registered successfully! Your username is: {username}")
+                
+            elif user_type == "faculty":
+                new_faculty_id = get_new_faculty_id()
+                user_data["TID"] = new_faculty_id
+                user_data["courses_taught"] = []
+                faculty_collection.insert_one(user_data)
+                st.success(f"Faculty registered successfully! Your username is: {username}")
+                
+            elif user_type == "research_assistant":
+                research_assistants_collection.insert_one(user_data)
+                st.success(f"Research Assistant registered successfully! Your username is: {username}")
+                
+            elif user_type == "analyst":
+                analysts_collection.insert_one(user_data)
+                st.success(f"Analyst registered successfully! Your username is: {username}")
 
 # Create Course feature
 def create_course_form(faculty_name, faculty_id):
@@ -822,6 +958,37 @@ def show_available_courses(username, user_type, user_id):
     if selected_course:
         course_id = selected_course.split("(")[-1][:-1]
         enroll_in_course_page(course_id)
+
+def validate_email(email):
+    """Validate email format and domain"""
+    # Basic email pattern
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not re.match(pattern, email):
+        return False, "Invalid email format"
+    
+    # You can add additional institution-specific validation here
+    # For example, checking if the domain is from your institution
+    allowed_domains = ["spit.ac.in"]  # Add more domains as needed
+    domain = email.split('@')[1]
+    if domain not in allowed_domains:
+        return False, "Please use your institutional email address"
+    
+    return True, "Valid email"
+
+def validate_phone(phone):
+    """Validate phone number format"""
+    # Assuming Indian phone numbers
+    pattern = r'^[6-9]\d{9}$'
+    if not re.match(pattern, phone):
+        return False, "Invalid phone number format. Please enter a 10-digit Indian mobile number"
+    return True, "Valid phone number"
+
+def extract_username(email):
+    """Extract username from email"""
+    return email.split('@')[0]
+
+
+
 
 def main_dashboard():
     if st.session_state.user_type == "research_assistant":
