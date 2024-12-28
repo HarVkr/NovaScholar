@@ -839,11 +839,11 @@ if __name__ == "__main__":
     ]
     
     # Process analytics
-    results = analytics_engine.process_chat_history(all_chat_histories)
+    #results = analytics_engine.process_chat_history(all_chat_histories)
     
     # Generate faculty report
-    faculty_report = analytics_engine.generate_faculty_report(results)
-    print(faculty_report)
+    #faculty_report = analytics_engine.generate_faculty_report(results)
+    #print(faculty_report)
     # Print results
     # logger.info("Analytics processing completed")
     # logger.info(f"Key findings: {faculty_report['key_findings']}")
