@@ -16,7 +16,7 @@ import json
 
 # Load chat histories from JSON file
 all_chat_histories = []
-with open(r'D:\ML_Projects\CSR Project\NOVAScholarProject\NovaScholar\all_chat_histories2.json', 'r') as file:
+with open(r'all_chat_histories2.json', 'r') as file:
     all_chat_histories = json.load(file)
 
 load_dotenv()
