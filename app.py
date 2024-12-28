@@ -134,7 +134,7 @@ def get_courses(username, user_type):
             enrolled_course_ids = [
                 course["course_id"] for course in student.get("enrolled_courses", [])
             ]
-            courses = courses_collection2.find(
+            courses = courses_collection.find(
                 {"course_id": {"$in": enrolled_course_ids}}
             )
             # courses += courses_collection2.find(
@@ -156,8 +156,9 @@ def get_courses(username, user_type):
             course_ids = [
                 course["course_id"] for course in faculty.get("courses_taught", [])
             ]
-            courses = courses_collection2.find({"course_id": {"$in": course_ids}})
-            return list(courses)
+            # courses_1 = list(courses_collection2.find({"course_id": {"$in": course_ids}}))
+            courses_2 = list(courses_collection.find({"course_id": {"$in": course_ids}}))
+            return courses_2
     elif user_type == "research_assistant":
         research_assistant = research_assistants_collection.find_one(
             {"full_name": username}
@@ -178,9 +179,9 @@ def get_course_ids():
     return [course["course_id"] for course in SAMPLE_COURSES]
 
 
-def get_sessions(course_id):
+def get_sessions(course_id, course_title):
     """Get sessions for a given course ID"""
-    course = courses_collection2.find_one({"course_id": course_id})
+    course = courses_collection.find_one({"course_id": course_id, "title": course_title})
     if course:
         return course.get("sessions", [])
     return []
@@ -188,7 +189,7 @@ def get_sessions(course_id):
 
 def create_session(new_session, course_id):
     """Create a new session for a given course ID"""
-    course = courses_collection2.find_one({"course_id": course_id})
+    course = courses_collection2.find_one({"course_id": course_id}) | courses_collection.find_one({"course_id": course_id})
     if course:
         last_session_id = max((session["session_id"] for session in course["sessions"]))
         last_session_id = int(last_session_id[1:])
@@ -718,6 +719,7 @@ def enroll_in_course(course_id, course_title, student):
                     {"$set": {"enrolled_courses": courses}},
                 )
                 st.success(f"Enrolled in course {course_title}")
+                st.experimental_rerun()
             else:
                 st.error("Course not found")
         else:
@@ -805,7 +807,7 @@ def show_available_courses(username, user_type, user_id):
     """Display available courses for enrollment"""
     st.title("Available Courses")
     
-    courses = list(courses_collection2.find({}, {"course_id": 1, "title": 1}))
+    courses = list(courses_collection.find({}, {"course_id": 1, "title": 1}))
     course_options = [
         f"{course['title']} ({course['course_id']})" for course in courses
     ]
@@ -869,13 +871,13 @@ def main_dashboard():
 
                 selected_course = st.selectbox("Select Course", course_titles)
                 selected_course_id = course_ids[course_titles.index(selected_course)]
-                print(selected_course_id)
+                print("Selected Course ID: ", selected_course_id)
 
                 st.session_state.selected_course = selected_course
                 st.session_state.selected_course_id = selected_course_id
 
                 # Display course sessions
-                sessions = get_sessions(selected_course_id)
+                sessions = get_sessions(selected_course_id, selected_course)
 
                 st.title("Course Sessions")
                 for i, session in enumerate(sessions, start=1):

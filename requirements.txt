@@ -22,3 +22,6 @@ zoomus
 asyncio
 google-auth-oauthlib
 google-auth
+transformers
+textstat
+spacy

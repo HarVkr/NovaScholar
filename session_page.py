@@ -129,7 +129,7 @@ def get_current_user():
 def display_preclass_content(session, student_id, course_id):
     """Display pre-class materials for a session"""
     st.subheader("Pre-class Materials")
-
+    print("Session ID is: ", session['session_id'])
     # Display pre-class materials
     materials = resources_collection.find({"session_id": session['session_id']})
     for material in materials:
@@ -137,17 +137,56 @@ def display_preclass_content(session, student_id, course_id):
             file_type = material.get('file_type', 'unknown')
             if file_type == 'application/pdf':
                 st.markdown(f"📑 [Open PDF Document]({material['file_name']})")
-                if st.button("View PDF", key=f"view_pdf_{material['file_name']}"):
+                if st.button("View PDF", key=f"view_pdf_{material['_id']}"):
                     st.text_area("PDF Content", material['text_content'], height=300)
-                if st.button("Download PDF", key=f"download_pdf_{material['file_name']}"):
+                if st.button("Download PDF", key=f"download_pdf_{material['_id']}"):
                     st.download_button(
                         label="Download PDF",
                         data=material['file_content'],
                         file_name=material['file_name'],
                         mime='application/pdf'
                     )
-                if st.button("Mark PDF as Read", key=f"pdf_{material['file_name']}"):
+                if st.button("Mark PDF as Read", key=f"pdf_{material['_id']}"):
                     create_notification("PDF marked as read!", "success")
+            elif file_type == 'text/plain':
+                st.markdown(f"📄 [Open Text Document]({material['file_name']})")
+                if st.button("View Text", key=f"view_text_{material['_id']}"):
+                    st.text_area("Text Content", material['text_content'], height=300)
+                if st.button("Download Text", key=f"download_text_{material['_id']}"):
+                    st.download_button(
+                        label="Download Text",
+                        data=material['file_content'],
+                        file_name=material['file_name'],
+                        mime='text/plain'
+                    )
+                if st.button("Mark Text as Read", key=f"text_{material['_id']}"):
+                    create_notification("Text marked as read!", "success")
+            elif file_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+                st.markdown(f"📄 [Open Word Document]({material['file_name']})")
+                if st.button("View Word", key=f"view_word_{material['_id']}"):
+                    st.text_area("Word Content", material['text_content'], height=300)
+                if st.button("Download Word", key=f"download_word_{material['_id']}"):
+                    st.download_button(
+                        label="Download Word",
+                        data=material['file_content'],
+                        file_name=material['file_name'],
+                        mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                    )
+                if st.button("Mark Word as Read", key=f"word_{material['_id']}"):
+                    create_notification("Word document marked as read!", "success")
+            elif file_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+                st.markdown(f"📊 [Open PowerPoint Presentation]({material['file_name']})")
+                if st.button("View PowerPoint", key=f"view_pptx_{material['_id']}"):
+                    st.text_area("PowerPoint Content", material['text_content'], height=300)
+                if st.button("Download PowerPoint", key=f"download_pptx_{material['_id']}"):
+                    st.download_button(
+                        label="Download PowerPoint",
+                        data=material['file_content'],
+                        file_name=material['file_name'],
+                        mime='application/vnd.openxmlformats-officedocument.presentationml.presentation'
+                    )
+                if st.button("Mark PowerPoint as Read", key=f"pptx_{material['_id']}"):
+                    create_notification("PowerPoint presentation marked as read!", "success")
 
     # Initialize 'messages' in session_state if it doesn't exist
     if 'messages' not in st.session_state:
@@ -170,7 +209,7 @@ def display_preclass_content(session, student_id, course_id):
 
                 # Get document context
                 context = ""
-                print(session['session_id'])
+                print("Session ID is: ", session['session_id'])
                 materials = resources_collection.find({"session_id": session['session_id']})
                 print(materials)
                 context = ""
@@ -181,7 +220,7 @@ def display_preclass_content(session, student_id, course_id):
                 context = ""
                 for material in materials:
                     resource_id = material['_id']
-                    print(resource_id)
+                    print("Supposed Resource ID is: ", resource_id)
                     vector_data = vectors_collection.find_one({"resource_id": resource_id})
                     # print(vector_data)
                     if vector_data and 'text' in vector_data:
@@ -273,12 +312,12 @@ def display_preclass_content(session, student_id, course_id):
                 if file_content:
                     material_type = st.selectbox("Select Material Type", ["pdf", "docx", "txt"])
                     if st.button("Upload Material"):
-                        resource_id = upload_resource(course_id, session['session_id'], file_name, uploaded_file, material_type)
-
+                        upload_resource(course_id, session['session_id'], file_name, uploaded_file, material_type)
+                        # print("Resource ID is: ", resource_id)
                         # Search for the newly uploaded resource's _id in resources_collection
                         # resource_id = resources_collection.find_one({"file_name": file_name})["_id"]
-                        create_vector_store(file_content, resource_id)
                         st.success("Material uploaded successfully!")
+                        # st.experimental_rerun()
 
     # st.subheader("Your Chat History")
     if st.button("View Chat History"):
@@ -472,6 +511,7 @@ def display_post_class_content(session, student_id, course_id):
     st.header("Post-class Work")
 
     if st.session_state.user_type == 'faculty':
+        faculty_id = st.session_state.user_id
         st.subheader("Create Subjective Test")
         with st.form("create_subjective_test_form"):
             test_title = st.text_input("Test Title")
@@ -559,7 +599,7 @@ def display_post_class_content(session, student_id, course_id):
                         st.markdown(f"*Correct Answer: {q['correct_option']}*")
                     
                     # Save quiz 
-                    quiz_id = save_quiz(course_id, session['session_id'], quiz_title, questions)
+                    quiz_id = save_quiz(course_id, session['session_id'], quiz_title, questions, faculty_id)
                     if quiz_id:
                         st.success("Quiz saved successfully!")
                     else:
@@ -1415,7 +1455,7 @@ def display_session_content(student_id, course_id, session, username, user_type)
     else:
         session_date = session['date']
 
-    course_name = courses_collection2.find_one({"course_id": course_id})['title']
+    course_name = courses_collection.find_one({"course_id": course_id})['title']
     
     st.markdown(f"**Date:** {format_datetime(session_date)}")
     st.markdown(f"**Course Name:** {course_name}")
