@@ -1469,26 +1469,29 @@ def display_session_content(student_id, course_id, session, username, user_type)
             "In-class Work", 
             "Post-class Work",
             "Quizzes",
-            "Subjective Tests"
+            "Subjective Tests",
             "Group Work",
             "End Terms"
         ])
-        with tabs[0]:
-            display_preclass_content(session, student_id, course_id)
-        with tabs[1]:
-            display_in_class_content(session, user_type)
-        with tabs[2]:
-            display_post_class_content(session, student_id, course_id)
-        with tabs[3]:
-            display_quiz_tab(student_id, course_id, session['session_id'])
-        with tabs[4]:
-            display_subjective_test_tab(student_id, course_id, session['session_id'])
-        with tabs[5]:
-            st.subheader("Group Work")
-            st.info("Group work content will be available soon.")
-        with tabs[6]:
-            st.subheader("End Terms")
-            st.info("End term content will be available soon.")
+        if len(tabs) <= 7:
+            with tabs[0]:
+                display_preclass_content(session, student_id, course_id)
+            with tabs[1]:
+                display_in_class_content(session, user_type)
+            with tabs[2]:
+                display_post_class_content(session, student_id, course_id)
+            with tabs[3]:
+                display_quiz_tab(student_id, course_id, session['session_id'])
+            with tabs[4]:
+                display_subjective_test_tab(student_id, course_id, session['session_id'])
+            with tabs[5]:
+                st.subheader("Group Work")
+                st.info("Group work content will be available soon.")
+            with tabs[6]:
+                st.subheader("End Terms")
+                st.info("End term content will be available soon.")
+        else:
+            st.error("Error creating tabs. Please try again.")
     
     else:  # faculty user
         # Create all tabs at once for faculty
