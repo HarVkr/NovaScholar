@@ -15,9 +15,9 @@ import spacy
 import json
 
 # Load chat histories from JSON file
-all_chat_histories = []
-with open(r'D:\ML_Projects\CSR Project\NOVAScholarProject\NovaScholar\all_chat_histories2.json', 'r') as file:
-    all_chat_histories = json.load(file)
+# all_chat_histories = []
+# with open(r'all_chat_histories2.json', 'r') as file:
+#     all_chat_histories = json.load(file)
 
 load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI")
@@ -839,11 +839,11 @@ if __name__ == "__main__":
     ]
     
     # Process analytics
-    results = analytics_engine.process_chat_history(all_chat_histories)
+    #results = analytics_engine.process_chat_history(all_chat_histories)
     
     # Generate faculty report
-    faculty_report = analytics_engine.generate_faculty_report(results)
-    print(faculty_report)
+    #faculty_report = analytics_engine.generate_faculty_report(results)
+    #print(faculty_report)
     # Print results
     # logger.info("Analytics processing completed")
     # logger.info(f"Key findings: {faculty_report['key_findings']}")
