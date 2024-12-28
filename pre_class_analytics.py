@@ -15,9 +15,9 @@ import spacy
 import json
 
 # Load chat histories from JSON file
-all_chat_histories = []
-with open(r'all_chat_histories2.json', 'r') as file:
-    all_chat_histories = json.load(file)
+# all_chat_histories = []
+# with open(r'all_chat_histories2.json', 'r') as file:
+#     all_chat_histories = json.load(file)
 
 load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI")
