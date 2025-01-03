@@ -968,10 +968,10 @@ def validate_email(email):
     
     # You can add additional institution-specific validation here
     # For example, checking if the domain is from your institution
-    allowed_domains = ["spit.ac.in"]  # Add more domains as needed
-    domain = email.split('@')[1]
-    if domain not in allowed_domains:
-        return False, "Please use your institutional email address"
+    # allowed_domains = ["spit.ac.in"]  # Add more domains as needed
+    # domain = email.split('@')[1]
+    # if domain not in allowed_domains:
+    #     return False, "Please use your institutional email address"
     
     return True, "Valid email"
 
