@@ -132,18 +132,17 @@ def login_form():
     st.title("Welcome to NOVAScholar")
 
     with st.form("login_form"):
-        col1, col2 = st.columns(2)
+        # Role selection at the top
+        user_type = st.selectbox(
+            "Please select your Role",
+            ["student", "faculty", "research_assistant", "analyst"]
+        )
         
-        with col1:
-            user_type = st.selectbox(
-                "Please select your Role",
-                ["student", "faculty", "research_assistant", "analyst"]
-            )
-            username = st.text_input("Username or Email")
+        # Username/email and password stacked vertically
+        username = st.text_input("Username or Email")
+        password = st.text_input("Password", type="password")
         
-        with col2:
-            password = st.text_input("Password", type="password")
-        
+        # Login button
         submit = st.form_submit_button("Login")
 
         if submit:
@@ -830,13 +829,8 @@ def create_course_form(faculty_name, faculty_id):
             except Exception as e:
                 st.error(f"Error saving course: {e}")
     
-
-
 from research_assistant_dashboard import display_research_assistant_dashboard
-
 from goals2 import display_analyst_dashboard
-
-
 def enroll_in_course(course_id, course_title, student):
     """Enroll a student in a course"""
     if student:
