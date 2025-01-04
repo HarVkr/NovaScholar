@@ -1244,9 +1244,9 @@ def convert_json_to_dict(json_str):
         return None
 
 # Load topics from a JSON file
-topics = []
-with open(r'topics.json', 'r') as file:
-    topics = json.load(file)
+# topics = []
+# with open(r'topics.json', 'r') as file:
+#     topics = json.load(file)
 
 def get_preclass_analytics(session):
     """Get all user_ids from chat_history collection where session_id matches"""
@@ -1271,7 +1271,7 @@ def get_preclass_analytics(session):
     
 
     # Pass the pre-class materials content to the analytics engine
-    # topics = extract_topics_from_materials(session)
+    topics = extract_topics_from_materials(session)
     # dict_topics = convert_json_to_dict(topics)
     print(topics)
     
