@@ -132,19 +132,17 @@ def login_form():
     st.title("Welcome to NOVAScholar")
 
     with st.form("login_form"):
-        col1, col2 = st.columns(2)
+        # Role selection at the top
+        user_type = st.selectbox(
+            "Please select your Role",
+            ["student", "faculty", "research_assistant", "analyst"]
+        )
         
-        with col1:
-            user_option = st.selectbox(
-                "Please select your Role",
-                ["Student", "Faculty", "Research Assistant", "Analyst"]
-            )
-            user_type = user_option.lower()
-            username = st.text_input("Username or Email")
+        # Username/email and password stacked vertically
+        username = st.text_input("Username or Email")
+        password = st.text_input("Password", type="password")
         
-        with col2:
-            password = st.text_input("Password", type="password")
-        
+        # Login button
         submit = st.form_submit_button("Login")
 
         if submit:
@@ -831,13 +829,8 @@ def create_course_form(faculty_name, faculty_id):
             except Exception as e:
                 st.error(f"Error saving course: {e}")
     
-
-
 from research_assistant_dashboard import display_research_assistant_dashboard
-
 from goals2 import display_analyst_dashboard
-
-
 def enroll_in_course(course_id, course_title, student):
     """Enroll a student in a course"""
     if student:
@@ -969,10 +962,10 @@ def validate_email(email):
     
     # You can add additional institution-specific validation here
     # For example, checking if the domain is from your institution
-    allowed_domains = ["spit.ac.in"]  # Add more domains as needed
-    domain = email.split('@')[1]
-    if domain not in allowed_domains:
-        return False, "Please use your institutional email address"
+    # allowed_domains = ["spit.ac.in"]  # Add more domains as needed
+    # domain = email.split('@')[1]
+    # if domain not in allowed_domains:
+    #     return False, "Please use your institutional email address"
     
     return True, "Valid email"
 

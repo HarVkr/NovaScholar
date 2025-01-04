@@ -25,3 +25,4 @@ google-auth
 transformers
 textstat
 spacy
+streamlit_option_menu
