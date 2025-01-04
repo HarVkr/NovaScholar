@@ -16,11 +16,12 @@ import os
 from pymongo import MongoClient
 from gen_mcqs import generate_mcqs, save_quiz, quizzes_collection, get_student_quiz_score, submit_quiz_answers
 from create_course import courses_collection
-from pre_class_analytics import NovaScholarAnalytics
+# from pre_class_analytics import NovaScholarAnalytics
+from pre_class_analytics2 import NovaScholarAnalytics
 import openai
 from openai import OpenAI
 
-
+import google.generativeai as genai
 from goals2 import GoalAnalyzer
 from openai import OpenAI
 import asyncio
@@ -242,19 +243,37 @@ def display_preclass_content(session, student_id, course_id):
                     
                     # Please provide a clear and concise answer based only on the information provided in the context.
                     # """
+                    # context_prompt = f"""
+                    # You are a highly intelligent and resourceful assistant capable of synthesizing information from the provided context. 
+
+                    # Context:
+                    # {context}
+
+                    # Instructions:
+                    # 1. Base your answers primarily on the given context. 
+                    # 2. If the answer to the user's question is not explicitly in the context but can be inferred or synthesized from the information provided, do so thoughtfully.
+                    # 3. Only use external knowledge or web assistance when:
+                    # - The context lacks sufficient information, and
+                    # - The question requires knowledge beyond what can be reasonably inferred from the context.
+                    # 4. Clearly state if you are relying on web assistance for any part of your answer.
+                    # 5. Do not respond with a negative. If the answer is not in the context, provide a thoughtful response based on the information available on the web about it.
+
+                    # Question: {prompt}
+
+                    # Please provide a clear and comprehensive answer based on the above instructions.
+                    # """
                     context_prompt = f"""
-                    You are a highly intelligent and resourceful assistant capable of synthesizing information from the provided context. 
+                    You are a highly intelligent and resourceful assistant capable of synthesizing information from the provided context and external sources.
 
                     Context:
                     {context}
 
                     Instructions:
-                    1. Base your answers primarily on the given context. 
-                    2. If the answer to the user's question is not explicitly in the context but can be inferred or synthesized from the information provided, do so thoughtfully.
-                    3. Only use external knowledge or web assistance when:
-                    - The context lacks sufficient information, and
-                    - The question requires knowledge beyond what can be reasonably inferred from the context.
-                    4. Clearly state if you are relying on web assistance for any part of your answer.
+                    1. Base your answers on the provided context wherever possible.
+                    2. If the answer to the user's question is not explicitly in the context:
+                    - Use external knowledge or web assistance to provide a clear and accurate response.
+                    3. Do not respond negatively. If the answer is not in the context, use web assistance or your knowledge to generate a thoughtful response.
+                    4. Clearly state if part of your response relies on web assistance.
 
                     Question: {prompt}
 
@@ -1147,6 +1166,88 @@ def get_response_from_llm(raw_data):
         st.error(f"Error generating response: {str(e)}")
         return None
 
+import typing_extensions as typing 
+from typing import Union, List, Dict
+
+# class Topics(typing.TypedDict):
+#     overarching_theme: List[Dict[str, Union[str, List[Dict[str, Union[str, List[str]]]]]]]
+#     indirect_topics: List[Dict[str, str]]
+
+def extract_topics_from_materials(session):
+    """Extract topics from pre-class materials"""
+    materials = resources_collection.find({"session_id": session['session_id']})
+    texts = ""
+    if materials:
+        for material in materials:
+            if 'text_content' in material:
+                text = material['text_content']
+                texts += text + "\n"
+            else:
+                st.warning("No text content found in the material.")
+                return
+    else:
+        st.error("No pre-class materials found for this session.")
+        return
+
+    if texts:
+        context_prompt = f"""
+        Task: Extract Comprehensive Topics in a List Format
+        You are tasked with analyzing the provided text content and extracting a detailed, flat list of topics.
+
+        Instructions:
+        Identify All Topics: Extract a comprehensive list of all topics, subtopics, and indirect topics present in the provided text content. This list should include:
+
+        Overarching themes
+        Main topics
+        Subtopics and their sub-subtopics
+        Indirectly related topics
+        Flat List Format: Provide a flat list where each item is a topic. Ensure topics at all levels (overarching, main, sub, sub-sub, indirect) are represented as individual entries in the list.
+
+        Be Exhaustive: Ensure the response captures every topic, subtopic, and indirectly related concept comprehensively.
+
+        Output Requirements:
+        Use this structure:
+        {{
+            "topics": [
+                "Topic 1",
+                "Topic 2",
+                "Topic 3",
+                ...
+            ]
+        }}
+        Do Not Include: Do not include backticks, hierarchical structures, or the word 'json' in your response.
+
+        Content to Analyze:
+        {texts}
+        """
+        try:
+            # response = model.generate_content(context_prompt, generation_config=genai.GenerationConfig(response_mime_type="application/json", response_schema=list[Topics]))
+            response = model.generate_content(context_prompt)
+            if not response or not response.text:
+                st.error("Error extracting topics from materials.")
+                return
+            
+            topics = response.text
+            return topics
+        except Exception as e:
+            st.error(f"Error extracting topics: {str(e)}")
+            return None
+    else:
+        st.error("No text content found in the pre-class materials.")
+        return None
+
+def convert_json_to_dict(json_str):
+    try:
+        return json.loads(json_str)
+    except Exception as e:
+        st.error(f"Error converting JSON to dictionary. {str(e)}")
+        return None
+
+# Load topics from a JSON file
+topics = []
+with open(r'topics.json', 'r') as file:
+    topics = json.load(file)
+
 def get_preclass_analytics(session):
     """Get all user_ids from chat_history collection where session_id matches"""
     user_ids = chat_history_collection.distinct("user_id", {"session_id": session['session_id']})
@@ -1168,120 +1269,380 @@ def get_preclass_analytics(session):
         else:
             st.warning("No chat history found for this session.")
     
-    # Use the analytics engine
-    analytics_engine = NovaScholarAnalytics()
-    results = analytics_engine.process_chat_history(all_chat_histories)
-    faculty_report = analytics_engine.generate_faculty_report(results)
+
+    # Pass the pre-class materials content to the analytics engine
+    # topics = extract_topics_from_materials(session)
+    # dict_topics = convert_json_to_dict(topics)
+    print(topics)
     
-    # Pass this Faculty Report to an LLM model for refinements and clarity
-    refined_report = get_response_from_llm(faculty_report)
-    return refined_report
+    # # Use the 1st analytics engine
+    # analytics_engine = NovaScholarAnalytics(all_topics_list=topics)
+    # # extracted_topics = analytics_engine._extract_topics(None, topics)
+    # # print(extracted_topics)
 
-def display_preclass_analytics2(session, course_id):
-    refined_report = get_preclass_analytics(session)
-    st.subheader("Pre-class Analytics")
-    if refined_report:
-        # Custom CSS to improve the look and feel
-        st.markdown("""
-            <style>
-            .metric-card {
-                background-color: #f8f9fa;
-                border-radius: 10px;
-                padding: 20px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            .header-text {
-                color: #1f77b4;
-                font-size: 24px;
-                font-weight: bold;
-                margin-bottom: 20px;
-            }
-            .subheader {
-                color: #2c3e50;
-                font-size: 17px;
-                font-weight: 500;
-                margin-bottom: 10px;
-            }
-            .insight-text {
-                color: #34495e;
-                font-size: 16px;
-                line-height: 1.6;
-            }
-            .glossary-card {
-                padding: 15px;
-                margin-top: 40px;
-            }
-            </style>
-        """, unsafe_allow_html=True)
+    # results = analytics_engine.process_chat_history(all_chat_histories)
+    # faculty_report = analytics_engine.generate_faculty_report(results)
+    # print(faculty_report)
+    # # Pass this Faculty Report to an LLM model for refinements and clarity
+    # refined_report = get_response_from_llm(faculty_report)
+    # return refined_report
 
-        # Header
-        # st.markdown("<h1 style='text-align: center; color: #2c3e50;'>Pre-Class Analytics Dashboard</h1>", unsafe_allow_html=True)
-        # st.markdown("<p style='text-align: center; color: #7f8c8d;'>Insights from Student Interactions</p>", unsafe_allow_html=True)
-        
-        # Create three columns for metrics
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown("<p class='header-text'>🎯 Low Engagement Topics</p>", unsafe_allow_html=True)
-            
-            # Group topics by category
-            topics = refined_report["Low Engagement Topics"]
-            # categories = defaultdict(list)
-            for i, topic in enumerate(topics):
-                st.markdown(f"{i + 1}.  <p class='subheader'>{topic}</p>", unsafe_allow_html=True)
+    # Use the 2nd analytice engine (using LLM): 
+    analytics_generator = NovaScholarAnalytics()
+    analytics2 = analytics_generator.generate_analytics(all_chat_histories, topics)
+    # enriched_analytics = analytics_generator._enrich_analytics(analytics2)
+    print("Analytics is: ", analytics2)
+    return analytics2
+    # print(json.dumps(analytics, indent=2))
 
-            # # Categorize topics (you can modify these categories based on your needs)
-            # for topic in topics:
-            #     if "Data" in topic and ("Type" in topic or "Structure" in topic):
-            #         categories["Data Types"].append(topic)
-            #     elif "Analytics" in topic:
-            #         categories["Analytics Concepts"].append(topic)
-            #     else:
-            #         categories["General Concepts"].append(topic)
-            
-            # Display categorized topics
-            # for category, items in categories.items():
-            #     st.markdown(f"<p class='subheader'>{category}</p>", unsafe_allow_html=True)
-            #     i = 0
-            #     for i, item in items:
-            #         st.markdown(f"{i + 1} {item}", unsafe_allow_html=True)
 
-        with col2:
-            st.markdown("<p class='header-text'>⚠️ Frustration Areas</p>", unsafe_allow_html=True)
-            for i, area in enumerate(refined_report["Frustration Areas"]):
-                st.markdown(f"{i + 1}.  <p class='subheader'>{area}</p>", unsafe_allow_html=True)
+# Load Analytics from a JSON file
+# analytics = []
+# with open(r'new_analytics2.json', 'r') as file:
+#     analytics = json.load(file)
 
-        with col3:
-            st.markdown("<p class='header-text'>💡 Recommendations</p>", unsafe_allow_html=True)
-            for i, rec in enumerate(refined_report["Recommendations"]):
-                st.markdown(f"{i + 1}.  <p class='subheader'>{rec}</p>", unsafe_allow_html=True)
-
-        # Glossary section
-        st.markdown("<div class='glossary-card'>", unsafe_allow_html=True)
-        # st.markdown("<h3 style='color: #2c3e50;'>Understanding the Metrics</h3>", unsafe_allow_html=True)
-        
-        explanations = {
-            "Low Engagement Topics": "Topics where students showed minimal interaction or understanding during their chat sessions. These areas may require additional focus during classroom instruction.",
-            "Frustration Areas": "Specific concepts or topics where students expressed difficulty or confusion during their interactions with the chatbot. These areas may need immediate attention or alternative teaching approaches.",
-            "Recommendations": "AI-generated suggestions for improving student engagement and understanding, based on the analyzed chat interactions and identified patterns."
+def display_preclass_analytics(session, course_id):
+    # Initialize or get analytics data from session state
+    if 'analytics_data' not in st.session_state:
+        st.session_state.analytics_data = get_preclass_analytics(session)
+    
+    analytics = st.session_state.analytics_data
+    
+    # Enhanced CSS for better styling and interactivity
+    st.markdown("""
+        <style>
+        /* General styles */
+        .section-title {
+            color: #1a237e;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-top: 1rem 0 1rem 0;
         }
         
-        st.subheader("Understanding the Metrics")
-
-        for metric, explanation in explanations.items():
-            # st.markdown(f"<p class='subheader'>{metric}</p>", unsafe_allow_html=True)
-            # st.markdown(f"<p class='insight-text'>{explanation}</p>", unsafe_allow_html=True)
-            st.markdown(f"<span class='subheader'>**{metric}**</span>:  <span class='subheader'>{explanation}</span>", unsafe_allow_html=True)
+        /* Topic list styles */
+        .topic-list {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .topic-header {
+            background-color: #ffffff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            margin: 0.5rem 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.2s ease;
+        }
+        .topic-header:hover {
+            background-color: #f8fafc;
+            transform: translateX(5px);
+        }
+        .topic-header h3 {
+            color: #1e3a8a;
+            font-size: 1.1rem;
+            font-weight: 500;
+            margin: 0;
+        }
+        .topic-struggling-rate {
+            background-color: #dbeafe;
+            padding: 0.25rem 0.75rem;
+            border-radius: 16px;
+            font-size: 0.85rem;
+            color: #1e40af;
+        }
+        .topic-content {
+            background-color: #ffffff;
+            border: 1px solid #e0e0e0;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            padding: 1.25rem;
+            margin-top: -0.5rem;
+            margin-bottom: 1rem;
+        }
+        .topic-content .section-heading {
+            color: #2c5282;
+            font-size: 1rem;
+            font-weight: 600;
+            margin: 1rem 0 0.5rem 0;
+        }
+        .topic-content ul {
+            margin: 0;
+            padding-left: 1.25rem;
+            font-size: 0.85rem;
+            color: #4a5568;
+        }
         
-        st.markdown("</div>", unsafe_allow_html=True)
+        /* Recommendation card styles */
+        .recommendation-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        .recommendation-card {
+            background-color: #f8fafc;
+            border-radius: 8px;
+            padding: 1.25rem;
+            border-left: 4px solid #3b82f6;
+            margin-bottom: 1rem;
+        }
+        .recommendation-card h4 {
+            color: #1e40af;
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .recommendation-card .priority-badge {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            background-color: #dbeafe;
+            color: #1e40af;
+            text-transform: uppercase;
+        }
+        
+        /* Student analytics styles */
+        .student-filters {
+            background-color: #f8fafc;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        .student-metrics-card {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 1rem;
+            border: 1px solid #e5e7eb;
+            margin-bottom: 1rem;
+        }
+        .student-metrics-card .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+        .student-metrics-card .student-id {
+            color: #1e40af;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        .student-metrics-card .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+        }
+        .metric-box {
+            background-color: #f8fafc;
+            padding: 0.75rem;
+            border-radius: 6px;
+        }
+        .metric-box .label {
+            font-size: 0.9rem;
+            color: #6b7280;
+            margin-bottom: 0.25rem;
+            font-weight: 500;
+        }
+        .metric-box .value {
+            font-size: 0.9rem;
+            color: #1f2937;
+            font-weight: 600;
+        }
+        .struggling-topics {
+            grid-column: span 2;
+            margin-top: 0.5rem;
+        }
+        .struggling-topics .label{
+            font-size: 0.9rem;
+            font-weight: 600;        
+        }
+        .struggling-topics .value{
+            font-size: 0.9rem;
+            font-weight: 500;        
+        }
+        .recommendation-text {
+            grid-column: span 2;
+            font-size: 0.95rem;
+            color: #4b5563;
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid #e5e7eb;
+        }
+        .reason{
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
+    # Topic-wise Analytics Section
+    st.markdown('<h2 class="section-title">Topic-wise Analytics</h2>', unsafe_allow_html=True)
+    
+    # Initialize session state for topic expansion
+    if 'expanded_topic' not in st.session_state:
+        st.session_state.expanded_topic = None
+    
+    # Store topic indices in session state if not already done
+    if 'topic_indices' not in st.session_state:
+        st.session_state.topic_indices = list(range(len(analytics["topic_wise_insights"])))
+
+
+    st.markdown('<div class="topic-list">', unsafe_allow_html=True)
+    for idx in st.session_state.topic_indices:
+        topic = analytics["topic_wise_insights"][idx]
+        topic_id = f"topic_{idx}"
+        
+        # Create clickable header
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            if st.button(
+                topic["topic"],
+                key=f"topic_button_{idx}",
+                use_container_width=True,
+                type="secondary"
+            ):
+                st.session_state.expanded_topic = topic_id if st.session_state.expanded_topic != topic_id else None
+        
+        with col2:
+            st.markdown(f"""
+                <div style="text-align: right;">
+                    <span class="topic-struggling-rate">{topic["struggling_percentage"]*100:.1f}% Struggling</span>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Show content if topic is expanded
+        if st.session_state.expanded_topic == topic_id:
+            st.markdown(f"""
+                <div class="topic-content">
+                    <div class="section-heading">Key Issues</div>
+                    <ul>
+                        {"".join([f"<li>{issue}</li>" for issue in topic["key_issues"]])}
+                    </ul>
+                    <div class="section-heading">Key Misconceptions</div>
+                    <ul>
+                        {"".join([f"<li>{misc}</li>" for misc in topic["key_misconceptions"]])}
+                    </ul>
+                </div>
+            """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # AI Recommendations Section
+    st.markdown('<h2 class="section-title">AI-Powered Recommendations</h2>', unsafe_allow_html=True)
+    st.markdown('<div class="recommendation-grid">', unsafe_allow_html=True)
+    for idx, rec in enumerate(analytics["ai_recommended_actions"]):
+        st.markdown(f"""
+            <div class="recommendation-card">
+                <h4>
+                    <span>Recommendation {idx + 1}</span>
+                    <span class="priority-badge">{rec["priority"]}</span>
+                </h4>
+                <p>{rec["action"]}</p>
+                <p><span class="reason">Reason:</span>  {rec["reasoning"]}</p>
+                <p><span class="reason">Expected Outcome:</span>  {rec["expected_outcome"]}</p>
+            </div>
+        """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Student Analytics Section
+    st.markdown('<h2 class="section-title">Student Analytics</h2>', unsafe_allow_html=True)
+    
+    # Filters
+    with st.container():
+        # st.markdown('<div class="student-filters">', unsafe_allow_html=True)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            concept_understanding = st.selectbox(
+                "Filter by Understanding",
+                ["All", "Strong", "Moderate", "Needs Improvement"]
+            )
+        with col2:
+            participation_level = st.selectbox(
+                "Filter by Participation",
+                ["All", "High (>80%)", "Medium (50-80%)", "Low (<50%)"]
+            )
+        with col3:
+            struggling_topic = st.selectbox(
+                "Filter by Struggling Topic",
+                ["All"] + list(set([topic for student in analytics["student_analytics"] 
+                                  for topic in student["struggling_topics"]]))
+            )
+        # st.markdown('</div>', unsafe_allow_html=True)
+
+    # Display student metrics in a grid
+    st.markdown('<div class="analytics-grid">', unsafe_allow_html=True)
+    for student in analytics["student_analytics"]:
+        # Apply filters
+        if (concept_understanding != "All" and 
+            student["engagement_metrics"]["concept_understanding"].replace("_", " ").title() != concept_understanding):
+            continue
+            
+        participation = student["engagement_metrics"]["participation_level"] * 100
+        if participation_level != "All":
+            if participation_level == "High (>80%)" and participation <= 80:
+                continue
+            elif participation_level == "Medium (50-80%)" and (participation < 50 or participation > 80):
+                continue
+            elif participation_level == "Low (<50%)" and participation >= 50:
+                continue
+                
+        if struggling_topic != "All" and struggling_topic not in student["struggling_topics"]:
+            continue
+
+        st.markdown(f"""
+            <div class="student-metrics-card">
+                <div class="header">
+                    <span class="student-id">Student {student["student_id"][-6:]}</span>
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric-box">
+                        <div class="label">Participation</div>
+                        <div class="value">{student["engagement_metrics"]["participation_level"]*100:.1f}%</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="label">Understanding</div>
+                        <div class="value">{student["engagement_metrics"]["concept_understanding"].replace('_', ' ').title()}</div>
+                    </div>
+                    <div class="struggling-topics">
+                        <div class="label">Struggling Topics: </div>
+                        <div class="value">{", ".join(student["struggling_topics"]) if student["struggling_topics"] else "None"}</div>
+                    </div>
+                    <div class="recommendation-text">
+                        {student["personalized_recommendation"]}
+                    </div>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def reset_analytics_state():
+    """
+    Helper function to reset the analytics state when needed
+    (e.g., when loading a new session or when data needs to be refreshed)
+    """
+    if 'analytics_data' in st.session_state:
+        del st.session_state.analytics_data
+    if 'expanded_topic' in st.session_state:
+        del st.session_state.expanded_topic
+    if 'topic_indices' in st.session_state:
+        del st.session_state.topic_indice
 
 def display_session_analytics(session, course_id):
     """Display session analytics for faculty"""
     st.header("Session Analytics")
 
     # Display Pre-class Analytics
-    display_preclass_analytics2(session, course_id)
+    display_preclass_analytics(session, course_id)
 
     # Display In-class Analytics
     display_inclass_analytics(session, course_id)

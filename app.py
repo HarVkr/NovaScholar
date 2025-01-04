@@ -135,10 +135,11 @@ def login_form():
         col1, col2 = st.columns(2)
         
         with col1:
-            user_type = st.selectbox(
+            user_option = st.selectbox(
                 "Please select your Role",
-                ["student", "faculty", "research_assistant", "analyst"]
+                ["Student", "Faculty", "Research Assistant", "Analyst"]
             )
+            user_type = user_option.lower()
             username = st.text_input("Username or Email")
         
         with col2:
@@ -159,7 +160,7 @@ def login_form():
 
 def get_courses(username, user_type):
     if user_type == "student":
-        student = students_collection.find_one({"full_name": username})
+        student = students_collection.find_one({"$or": [{"full_name": username}, {"username": username}]}) 
         if student:
             enrolled_course_ids = [
                 course["course_id"] for course in student.get("enrolled_courses", [])
@@ -855,7 +856,7 @@ def enroll_in_course(course_id, course_title, student):
                     {"$set": {"enrolled_courses": courses}},
                 )
                 st.success(f"Enrolled in course {course_title}")
-                st.experimental_rerun()
+                # st.experimental_rerun()
             else:
                 st.error("Course not found")
         else:
