@@ -1301,7 +1301,7 @@ def get_preclass_analytics(session):
 # with open(r'new_analytics2.json', 'r') as file:
 #     analytics = json.load(file)
 
-def display_preclass_analytics(session, course_id):
+def display_preclass_analytics2(session, course_id):
     # Initialize or get analytics data from session state
     if 'analytics_data' not in st.session_state:
         st.session_state.analytics_data = get_preclass_analytics(session)
@@ -1642,7 +1642,7 @@ def display_session_analytics(session, course_id):
     st.header("Session Analytics")
 
     # Display Pre-class Analytics
-    display_preclass_analytics(session, course_id)
+    display_preclass_analytics2(session, course_id)
 
     # Display In-class Analytics
     display_inclass_analytics(session, course_id)
@@ -1872,7 +1872,7 @@ def display_session_content(student_id, course_id, session, username, user_type)
         with tabs[2]:
             display_post_class_content(session, student_id, course_id)
         with tabs[3]:
-            display_preclass_analytics(session, course_id)
+            display_preclass_analytics2(session, course_id)
         with tabs[4]:
             display_inclass_analytics(session, course_id)
         with tabs[5]:
