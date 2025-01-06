@@ -15,7 +15,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
-from create_course import create_course, courses_collection, generate_perplexity_response, PERPLEXITY_API_KEY
+from create_course2 import create_course, courses_collection, generate_perplexity_response, generate_session_resources, PERPLEXITY_API_KEY, validate_course_plan
 import json
 from bson import ObjectId
 client = OpenAI(api_key=os.getenv("OPENAI_KEY"))
@@ -653,14 +653,206 @@ def register_page():
                 st.success(f"Analyst registered successfully! Your username is: {username}")
 
 # Create Course feature
+# def create_course_form2(faculty_name, faculty_id):
+#     """Display enhanced form to create a new course with AI-generated content"""
+#     st.title("Create New Course")
+    
+#     if 'course_plan' not in st.session_state:
+#         st.session_state.course_plan = None
+#     if 'edit_mode' not in st.session_state:
+#         st.session_state.edit_mode = False
+
+#     # Initial Course Creation Form
+#     if not st.session_state.course_plan:
+#         with st.form("initial_course_form"):
+#             col1, col2 = st.columns(2)
+#             with col1:
+#                 course_name = st.text_input("Course Name", placeholder="e.g., Introduction to Computer Science")
+#                 faculty_info = st.text_input("Faculty", value=faculty_name, disabled=True)
+#             with col2:
+#                 duration_weeks = st.number_input("Duration (weeks)", min_value=1, max_value=16, value=12)
+#                 start_date = st.date_input("Start Date")
+            
+#             generate_button = st.form_submit_button("Generate Course Structure", use_container_width=True)
+            
+#             if generate_button and course_name:
+#                 with st.spinner("Generating course structure..."):
+#                     try:
+#                         course_plan = generate_perplexity_response(PERPLEXITY_API_KEY, course_name)
+#                         # print(course_plan)
+#                         st.session_state.course_plan = json.loads(course_plan)
+#                         st.session_state.start_date = start_date
+#                         st.session_state.duration_weeks = duration_weeks
+#                         st.rerun()
+#                     except Exception as e:
+#                         st.error(f"Error generating course structure: {e}")
+    
+#     # Display and Edit Generated Course Content
+#     if st.session_state.course_plan:
+#         with st.expander("Course Overview", expanded=True):
+#             if not st.session_state.edit_mode:
+#                 st.subheader(st.session_state.course_plan['course_title'])
+#                 st.write(st.session_state.course_plan['course_description'])
+#                 edit_button = st.button("Edit Course Details", use_container_width=True)
+#                 if edit_button:
+#                     st.session_state.edit_mode = True
+#                     st.rerun()
+#             else:
+#                 with st.form("edit_course_details"):
+#                     st.session_state.course_plan['course_title'] = st.text_input(
+#                         "Course Title", 
+#                         value=st.session_state.course_plan['course_title']
+#                     )
+#                     st.session_state.course_plan['course_description'] = st.text_area(
+#                         "Course Description", 
+#                         value=st.session_state.course_plan['course_description']
+#                     )
+#                     if st.form_submit_button("Save Course Details"):
+#                         st.session_state.edit_mode = False
+#                         st.rerun()
+        
+#         # Display Modules and Sessions
+#         st.subheader("Course Modules and Sessions")
+        
+#         start_date = st.session_state.start_date
+#         current_date = start_date
+        
+#         all_sessions = []
+#         for module_idx, module in enumerate(st.session_state.course_plan['modules']):
+#             with st.expander(f"📚 Module {module_idx + 1}: {module['module_title']}", expanded=True):
+#                 # Edit module title
+#                 new_module_title = st.text_input(
+#                     f"Module {module_idx + 1} Title",
+#                     value=module['module_title'],
+#                     key=f"module_{module_idx}"
+#                 )
+#                 module['module_title'] = new_module_title
+                
+#                 for sub_idx, sub_module in enumerate(module['sub_modules']):
+#                     st.markdown(f"### 📖 {sub_module['title']}")
+                    
+#                     # Create sessions for each topic
+#                     for topic_idx, topic in enumerate(sub_module['topics']):
+#                         session_key = f"session_{module_idx}_{sub_idx}_{topic_idx}"
+                        
+#                         with st.container():
+#                             col1, col2, col3 = st.columns([3, 2, 1])
+#                             with col1:
+#                                 new_topic = st.text_input(
+#                                     "Topic",
+#                                     value=topic,
+#                                     key=f"{session_key}_topic"
+#                                 )
+#                                 sub_module['topics'][topic_idx] = new_topic
+                            
+#                             with col2:
+#                                 session_date = st.date_input(
+#                                     "Session Date",
+#                                     value=current_date,
+#                                     key=f"{session_key}_date"
+#                                 )
+                            
+#                             with col3:
+#                                 session_status = st.selectbox(
+#                                     "Status",
+#                                     options=["upcoming", "in-progress", "completed"],
+#                                     key=f"{session_key}_status"
+#                                 )
+                            
+#                             # Create session object
+#                             session = {
+#                                 "session_id": str(ObjectId()),
+#                                 "title": new_topic,
+#                                 "date": datetime.combine(session_date, datetime.min.time()),
+#                                 "status": session_status,
+#                                 "module_name": module['module_title'],
+#                                 "created_at": datetime.utcnow(),
+#                                 "pre_class": {
+#                                     "resources": [],
+#                                     "completion_required": True
+#                                 },
+#                                 "in_class": {
+#                                     "quiz": [],
+#                                     "polls": []
+#                                 },
+#                                 "post_class": {
+#                                     "assignments": []
+#                                 }
+#                             }
+#                             all_sessions.append(session)
+#                             current_date = session_date + timedelta(days=7)
+        
+#         new_course_id = get_new_course_id()
+#         course_title = st.session_state.course_plan['course_title']
+#         # Final Save Button
+#         if st.button("Save Course", type="primary", use_container_width=True):
+#             try:
+#                 course_doc = {
+#                     "course_id": new_course_id,
+#                     "title": course_title,
+#                     "description": st.session_state.course_plan['course_description'],
+#                     "faculty": faculty_name,
+#                     "faculty_id": faculty_id,
+#                     "duration": f"{st.session_state.duration_weeks} weeks",
+#                     "start_date": datetime.combine(st.session_state.start_date, datetime.min.time()),
+#                     "created_at": datetime.utcnow(),
+#                     "sessions": all_sessions
+#                 }
+                
+#                 # Insert into database
+#                 courses_collection.insert_one(course_doc)
+                
+#                 st.success("Course successfully created!")
+
+#                 # Update faculty collection
+#                 faculty_collection.update_one(
+#                     {"_id": st.session_state.user_id},
+#                     {
+#                         "$push": {
+#                             "courses_taught": {
+#                                 "course_id": new_course_id,
+#                                 "title": course_title,
+#                             }
+#                         }
+#                     },
+#                 )
+
+#                 # Clear session state
+#                 st.session_state.course_plan = None
+#                 st.session_state.edit_mode = False
+                
+#                 # Optional: Add a button to view the created course
+#                 if st.button("View Course"):
+#                     # Add navigation logic here
+#                     pass
+                
+#             except Exception as e:
+#                 st.error(f"Error saving course: {e}")
+    
+
+def remove_json_backticks(json_string):
+    """Remove backticks and 'json' from the JSON object string"""
+    return json_string.replace("```json", "").replace("```", "").strip()
+
+
 def create_course_form(faculty_name, faculty_id):
-    """Display enhanced form to create a new course with AI-generated content"""
+    """Display enhanced form to create a new course with AI-generated content and resources"""
+    
     st.title("Create New Course")
     
     if 'course_plan' not in st.session_state:
         st.session_state.course_plan = None
     if 'edit_mode' not in st.session_state:
         st.session_state.edit_mode = False
+    if 'resources_map' not in st.session_state:
+        st.session_state.resources_map = {}
+    if 'start_date' not in st.session_state:
+        st.session_state.start_date = None
+    if 'duration_weeks' not in st.session_state:
+        st.session_state.duration_weeks = None
+    if 'sessions_per_week' not in st.session_state:
+        st.session_state.sessions_per_week = None
+    
 
     # Initial Course Creation Form
     if not st.session_state.course_plan:
@@ -669,6 +861,7 @@ def create_course_form(faculty_name, faculty_id):
             with col1:
                 course_name = st.text_input("Course Name", placeholder="e.g., Introduction to Computer Science")
                 faculty_info = st.text_input("Faculty", value=faculty_name, disabled=True)
+                sessions_per_week = st.number_input("Sessions Per Week", min_value=1, max_value=5, value=2)
             with col2:
                 duration_weeks = st.number_input("Duration (weeks)", min_value=1, max_value=16, value=12)
                 start_date = st.date_input("Start Date")
@@ -676,13 +869,51 @@ def create_course_form(faculty_name, faculty_id):
             generate_button = st.form_submit_button("Generate Course Structure", use_container_width=True)
             
             if generate_button and course_name:
-                with st.spinner("Generating course structure..."):
+                with st.spinner("Generating course structure and resources..."):
                     try:
-                        course_plan = generate_perplexity_response(PERPLEXITY_API_KEY, course_name)
-                        # print(course_plan)
-                        st.session_state.course_plan = json.loads(course_plan)
+                        # Generate course plan with resources
+                        course_plan = generate_perplexity_response(
+                            PERPLEXITY_API_KEY, 
+                            course_name, 
+                            duration_weeks,
+                            sessions_per_week
+                        )
+                        try:
+                            course_plan_json = json.loads(course_plan)
+                            validate_course_plan(course_plan_json)
+                            st.session_state.course_plan = course_plan_json
+                        except (json.JSONDecodeError, ValueError) as e:
+                            st.error(f"Error in course plan structure: {e}")
+                            return
                         st.session_state.start_date = start_date
                         st.session_state.duration_weeks = duration_weeks
+                        st.session_state.sessions_per_week = sessions_per_week
+                        
+                        # Generate resources for all sessions
+                        session_titles = []
+                        for module in st.session_state.course_plan['modules']:
+                            for sub_module in module['sub_modules']:
+                                for topic in sub_module['topics']:
+                                    # session_titles.append(topic['title'])
+                                    # session_titles.append(topic)
+                                    if isinstance(topic, dict):
+                                        session_titles.append(topic['title'])
+                                    else:
+                                        session_titles.append(topic)
+                        # In generate_session_resources function, add validation:
+                        if not session_titles:
+                            return json.dumps({"session_resources": []})
+                        resources_response = generate_session_resources(PERPLEXITY_API_KEY, session_titles)
+                        without_backticks = remove_json_backticks(resources_response)
+                        resources = json.loads(without_backticks)
+                        st.session_state.resources_map = {
+                            resource['session_title']: resource['resources']
+                            for resource in resources['session_resources']
+                        }
+                        # Add error handling for the resources map
+                        # if st.session_state.resources_map is None:
+                        #     st.session_state.resources_map = {}
+
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error generating course structure: {e}")
@@ -693,6 +924,14 @@ def create_course_form(faculty_name, faculty_id):
             if not st.session_state.edit_mode:
                 st.subheader(st.session_state.course_plan['course_title'])
                 st.write(st.session_state.course_plan['course_description'])
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.write(f"**Start Date:** {st.session_state.start_date}")
+                with col2:
+                    st.write(f"**Duration (weeks):** {st.session_state.duration_weeks}")
+                with col3:
+                    st.write(f"**Sessions Per Week:** {st.session_state.sessions_per_week}")
+
                 edit_button = st.button("Edit Course Details", use_container_width=True)
                 if edit_button:
                     st.session_state.edit_mode = True
@@ -722,28 +961,45 @@ def create_course_form(faculty_name, faculty_id):
             with st.expander(f"📚 Module {module_idx + 1}: {module['module_title']}", expanded=True):
                 # Edit module title
                 new_module_title = st.text_input(
-                    f"Module {module_idx + 1} Title",
+                    f"Edit Module Title",
                     value=module['module_title'],
                     key=f"module_{module_idx}"
                 )
                 module['module_title'] = new_module_title
                 
                 for sub_idx, sub_module in enumerate(module['sub_modules']):
-                    st.markdown(f"### 📖 {sub_module['title']}")
-                    
-                    # Create sessions for each topic
+                    st.markdown("<br>", unsafe_allow_html=True)  # Add gap between sessions
+                    # st.markdown(f"### 📖 {sub_module['title']}")
+                    st.markdown(f'<h3 style="font-size: 1.25rem;">📖 Chapter {sub_idx + 1}: {sub_module["title"]}</h3>', unsafe_allow_html=True)
+                    # Possible fix: 
+                    # Inside the loop where topics are being processed:
+
                     for topic_idx, topic in enumerate(sub_module['topics']):
+                        st.markdown("<br>", unsafe_allow_html=True)  # Add gap between sessions
                         session_key = f"session_{module_idx}_{sub_idx}_{topic_idx}"
                         
+                        # Get topic title based on type
+                        if isinstance(topic, dict):
+                            current_topic_title = topic.get('title', '')
+                            current_topic_display = current_topic_title
+                        else:
+                            current_topic_title = str(topic)
+                            current_topic_display = current_topic_title
+
                         with st.container():
+                            # Session Details
                             col1, col2, col3 = st.columns([3, 2, 1])
                             with col1:
                                 new_topic = st.text_input(
-                                    "Topic",
-                                    value=topic,
+                                    f"Session {topic_idx + 1} Title",
+                                    value=current_topic_display,
                                     key=f"{session_key}_topic"
                                 )
-                                sub_module['topics'][topic_idx] = new_topic
+                                # Update the topic in the data structure
+                                if isinstance(topic, dict):
+                                    topic['title'] = new_topic
+                                else:
+                                    sub_module['topics'][topic_idx] = new_topic
                             
                             with col2:
                                 session_date = st.date_input(
@@ -758,6 +1014,59 @@ def create_course_form(faculty_name, faculty_id):
                                     options=["upcoming", "in-progress", "completed"],
                                     key=f"{session_key}_status"
                                 )
+                            
+                            # Display Resources
+                            if st.session_state.resources_map:
+                                # Try both the full topic title and the display title
+                                resources = None
+                                if isinstance(topic, dict) and topic.get('title') in st.session_state.resources_map:
+                                    resources = st.session_state.resources_map[topic['title']]
+                                elif current_topic_title in st.session_state.resources_map:
+                                    resources = st.session_state.resources_map[current_topic_title]
+                                
+                                if resources:
+                                    with st.container():
+                                        # st.markdown("#### 📚 Session Resources")
+                                        st.markdown(f'<h4 style="font-size: 1.25rem;">📚 Session Resources</h4>', unsafe_allow_html=True)
+                                        # Readings Tab
+                                        if resources.get('readings'):
+                                            st.markdown(f'<h5 style="font-size: 1.1rem; margin-top: 1rem;">📖 External Resources</h5>', unsafe_allow_html=True)
+                                            col1, col2 = st.columns(2)
+                                            for idx, reading in enumerate(resources['readings']):
+                                                with col1 if idx % 2 == 0 else col2:
+                                                    st.markdown(f"""
+                                                        - **{reading['title']}**
+                                                        - Type: {reading['type']}
+                                                        - Estimated reading time: {reading['estimated_read_time']}
+                                                        - [Access Resource]({reading['url']})
+                                                    """)
+                                        
+                                        # Books Tab and Additional Resources Tab side-by-side
+                                        col1, col2 = st.columns(2)
+                                        
+                                        with col1:
+                                            if resources.get('books'):
+                                                st.markdown(f'<h5 style="font-size: 1.1rem; margin-top: 1rem;">📚 Reference Books</h5>', unsafe_allow_html=True)
+                                                for book in resources['books']:
+                                                    with st.container():
+                                                        st.markdown(f"""
+                                                            - **{book['title']}**
+                                                            - Author: {book['author']}
+                                                            - ISBN: {book['isbn']}
+                                                            - Chapters: {book['chapters']}
+                                                        """)
+                                        
+                                        with col2:
+                                            if resources.get('additional_resources'):
+                                                st.markdown(f'<h5 style="font-size: 1.1rem; margin-top: 1rem;">🔗 Additional Study Resources</h5>', unsafe_allow_html=True)
+                                                for resource in resources['additional_resources']:
+                                                    with st.container():
+                                                        st.markdown(f"""
+                                                            - **{resource['title']}**
+                                                            - Type: {resource['type']}
+                                                            - Description: {resource['description']}
+                                                            - [Access Resource]({resource['url']})
+                                                        """)
                             
                             # Create session object
                             session = {
@@ -777,58 +1086,64 @@ def create_course_form(faculty_name, faculty_id):
                                 },
                                 "post_class": {
                                     "assignments": []
-                                }
+                                },
+                                "external_resources": st.session_state.resources_map.get(current_topic_title, {})
                             }
                             all_sessions.append(session)
                             current_date = session_date + timedelta(days=7)
-        
+                        
+
         new_course_id = get_new_course_id()
         course_title = st.session_state.course_plan['course_title']
+
         # Final Save Button
-        if st.button("Save Course", type="primary", use_container_width=True):
-            try:
-                course_doc = {
-                    "course_id": new_course_id,
-                    "title": course_title,
-                    "description": st.session_state.course_plan['course_description'],
-                    "faculty": faculty_name,
-                    "faculty_id": faculty_id,
-                    "duration": f"{st.session_state.duration_weeks} weeks",
-                    "start_date": datetime.combine(st.session_state.start_date, datetime.min.time()),
-                    "created_at": datetime.utcnow(),
-                    "sessions": all_sessions
-                }
-                
-                # Insert into database
-                courses_collection.insert_one(course_doc)
-                
-                st.success("Course successfully created!")
+    if st.button("Save Course", type="primary", use_container_width=True):
+        try:
+            course_doc = {
+                "course_id": new_course_id,
+                "title": course_title,
+                "description": st.session_state.course_plan['course_description'],
+                "faculty": faculty_name,
+                "faculty_id": faculty_id,
+                "duration": f"{st.session_state.duration_weeks} weeks",
+                "sessions_per_week": st.session_state.sessions_per_week,
+                "start_date": datetime.combine(st.session_state.start_date, datetime.min.time()),
+                "created_at": datetime.utcnow(),
+                "sessions": all_sessions
+            }
+            
+            # Insert into database
+            courses_collection.insert_one(course_doc)
+            st.success("Course successfully created!")
 
-                # Update faculty collection
-                faculty_collection.update_one(
-                    {"_id": st.session_state.user_id},
-                    {
-                        "$push": {
-                            "courses_taught": {
-                                "course_id": new_course_id,
-                                "title": course_title,
-                            }
+            # Update faculty collection
+            faculty_collection.update_one(
+                {"_id": st.session_state.user_id},
+                {
+                    "$push": {
+                        "courses_taught": {
+                            "course_id": new_course_id,
+                            "title": course_title,
                         }
-                    },
-                )
+                    }
+                }
+            )
 
-                # Clear session state
-                st.session_state.course_plan = None
-                st.session_state.edit_mode = False
-                
-                # Optional: Add a button to view the created course
-                if st.button("View Course"):
-                    # Add navigation logic here
-                    pass
-                
-            except Exception as e:
-                st.error(f"Error saving course: {e}")
-    
+            # Clear session state
+            st.session_state.course_plan = None
+            st.session_state.edit_mode = False
+            st.session_state.resources_map = {}
+            
+            # Optional: Add a button to view the created course
+            if st.button("View Course"):
+                # Add navigation logic here
+                pass
+            
+        except Exception as e:
+            st.error(f"Error saving course: {e}")
+
+
+
 from research_assistant_dashboard import display_research_assistant_dashboard
 from goals2 import display_analyst_dashboard
 def enroll_in_course(course_id, course_title, student):

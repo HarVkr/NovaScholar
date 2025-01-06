@@ -1288,11 +1288,41 @@ def get_preclass_analytics(session):
     # return refined_report
 
     # Use the 2nd analytice engine (using LLM): 
+    fallback_analytics = {
+        "topic_insights": [],
+            "student_insights": [],
+            "recommended_actions": [
+                {
+                    "action": "Review analytics generation process",
+                    "priority": "high",
+                    "target_group": "system_administrators",
+                    "reasoning": "Analytics generation failed",
+                    "expected_impact": "Restore analytics functionality"
+                }
+            ],
+            "course_health": {
+                "overall_engagement": 0,
+                "critical_topics": [],
+                "class_distribution": {
+                    "high_performers": 0,
+                    "average_performers": 0,
+                    "at_risk": 0
+                }
+            },
+            "intervention_metrics": {
+                "immediate_attention_needed": [],
+                "monitoring_required": []
+            }
+    }
     analytics_generator = NovaScholarAnalytics()
     analytics2 = analytics_generator.generate_analytics(all_chat_histories, topics)
     # enriched_analytics = analytics_generator._enrich_analytics(analytics2)
     print("Analytics is: ", analytics2)
-    return analytics2
+    
+    if analytics2 == fallback_analytics:
+        return None
+    else:
+        return analytics2
     # print(json.dumps(analytics, indent=2))
 
 
@@ -1305,9 +1335,16 @@ def display_preclass_analytics2(session, course_id):
     # Initialize or get analytics data from session state
     if 'analytics_data' not in st.session_state:
         st.session_state.analytics_data = get_preclass_analytics(session)
+    if 'topic_indices'not in st.session_state:
+        st.session_state.topic_indices = None 
     
-    analytics = st.session_state.analytics_data
+    if st.session_state.analytics_data:
+        analytics = st.session_state.analytics_data
+    else:
+        st.info("No analytics data found for this session.")
+        return
     
+    print(analytics)
     # Enhanced CSS for better styling and interactivity
     st.markdown("""
         <style>
@@ -1497,133 +1534,133 @@ def display_preclass_analytics2(session, course_id):
     if 'topic_indices' not in st.session_state:
         st.session_state.topic_indices = list(range(len(analytics["topic_wise_insights"])))
 
-
-    st.markdown('<div class="topic-list">', unsafe_allow_html=True)
-    for idx in st.session_state.topic_indices:
-        topic = analytics["topic_wise_insights"][idx]
-        topic_id = f"topic_{idx}"
-        
-        # Create clickable header
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button(
-                topic["topic"],
-                key=f"topic_button_{idx}",
-                use_container_width=True,
-                type="secondary"
-            ):
-                st.session_state.expanded_topic = topic_id if st.session_state.expanded_topic != topic_id else None
-        
-        with col2:
-            st.markdown(f"""
-                <div style="text-align: right;">
-                    <span class="topic-struggling-rate">{topic["struggling_percentage"]*100:.1f}% Struggling</span>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        # Show content if topic is expanded
-        if st.session_state.expanded_topic == topic_id:
-            st.markdown(f"""
-                <div class="topic-content">
-                    <div class="section-heading">Key Issues</div>
-                    <ul>
-                        {"".join([f"<li>{issue}</li>" for issue in topic["key_issues"]])}
-                    </ul>
-                    <div class="section-heading">Key Misconceptions</div>
-                    <ul>
-                        {"".join([f"<li>{misc}</li>" for misc in topic["key_misconceptions"]])}
-                    </ul>
-                </div>
-            """, unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # AI Recommendations Section
-    st.markdown('<h2 class="section-title">AI-Powered Recommendations</h2>', unsafe_allow_html=True)
-    st.markdown('<div class="recommendation-grid">', unsafe_allow_html=True)
-    for idx, rec in enumerate(analytics["ai_recommended_actions"]):
-        st.markdown(f"""
-            <div class="recommendation-card">
-                <h4>
-                    <span>Recommendation {idx + 1}</span>
-                    <span class="priority-badge">{rec["priority"]}</span>
-                </h4>
-                <p>{rec["action"]}</p>
-                <p><span class="reason">Reason:</span>  {rec["reasoning"]}</p>
-                <p><span class="reason">Expected Outcome:</span>  {rec["expected_outcome"]}</p>
-            </div>
-        """, unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # Student Analytics Section
-    st.markdown('<h2 class="section-title">Student Analytics</h2>', unsafe_allow_html=True)
-    
-    # Filters
-    with st.container():
-        # st.markdown('<div class="student-filters">', unsafe_allow_html=True)
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            concept_understanding = st.selectbox(
-                "Filter by Understanding",
-                ["All", "Strong", "Moderate", "Needs Improvement"]
-            )
-        with col2:
-            participation_level = st.selectbox(
-                "Filter by Participation",
-                ["All", "High (>80%)", "Medium (50-80%)", "Low (<50%)"]
-            )
-        with col3:
-            struggling_topic = st.selectbox(
-                "Filter by Struggling Topic",
-                ["All"] + list(set([topic for student in analytics["student_analytics"] 
-                                  for topic in student["struggling_topics"]]))
-            )
-        # st.markdown('</div>', unsafe_allow_html=True)
-
-    # Display student metrics in a grid
-    st.markdown('<div class="analytics-grid">', unsafe_allow_html=True)
-    for student in analytics["student_analytics"]:
-        # Apply filters
-        if (concept_understanding != "All" and 
-            student["engagement_metrics"]["concept_understanding"].replace("_", " ").title() != concept_understanding):
-            continue
+    if st.session_state.topic_indices: 
+        st.markdown('<div class="topic-list">', unsafe_allow_html=True)
+        for idx in st.session_state.topic_indices:
+            topic = analytics["topic_wise_insights"][idx]
+            topic_id = f"topic_{idx}"
             
-        participation = student["engagement_metrics"]["participation_level"] * 100
-        if participation_level != "All":
-            if participation_level == "High (>80%)" and participation <= 80:
-                continue
-            elif participation_level == "Medium (50-80%)" and (participation < 50 or participation > 80):
-                continue
-            elif participation_level == "Low (<50%)" and participation >= 50:
+            # Create clickable header
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                if st.button(
+                    topic["topic"],
+                    key=f"topic_button_{idx}",
+                    use_container_width=True,
+                    type="secondary"
+                ):
+                    st.session_state.expanded_topic = topic_id if st.session_state.expanded_topic != topic_id else None
+            
+            with col2:
+                st.markdown(f"""
+                    <div style="text-align: right;">
+                        <span class="topic-struggling-rate">{topic["struggling_percentage"]*100:.1f}% Struggling</span>
+                    </div>
+                """, unsafe_allow_html=True)
+            
+            # Show content if topic is expanded
+            if st.session_state.expanded_topic == topic_id:
+                st.markdown(f"""
+                    <div class="topic-content">
+                        <div class="section-heading">Key Issues</div>
+                        <ul>
+                            {"".join([f"<li>{issue}</li>" for issue in topic["key_issues"]])}
+                        </ul>
+                        <div class="section-heading">Key Misconceptions</div>
+                        <ul>
+                            {"".join([f"<li>{misc}</li>" for misc in topic["key_misconceptions"]])}
+                        </ul>
+                    </div>
+                """, unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # AI Recommendations Section
+        st.markdown('<h2 class="section-title">AI-Powered Recommendations</h2>', unsafe_allow_html=True)
+        st.markdown('<div class="recommendation-grid">', unsafe_allow_html=True)
+        for idx, rec in enumerate(analytics["ai_recommended_actions"]):
+            st.markdown(f"""
+                <div class="recommendation-card">
+                    <h4>
+                        <span>Recommendation {idx + 1}</span>
+                        <span class="priority-badge">{rec["priority"]}</span>
+                    </h4>
+                    <p>{rec["action"]}</p>
+                    <p><span class="reason">Reason:</span>  {rec["reasoning"]}</p>
+                    <p><span class="reason">Expected Outcome:</span>  {rec["expected_outcome"]}</p>
+                </div>
+            """, unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # Student Analytics Section
+        st.markdown('<h2 class="section-title">Student Analytics</h2>', unsafe_allow_html=True)
+        
+        # Filters
+        with st.container():
+            # st.markdown('<div class="student-filters">', unsafe_allow_html=True)
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                concept_understanding = st.selectbox(
+                    "Filter by Understanding",
+                    ["All", "Strong", "Moderate", "Needs Improvement"]
+                )
+            with col2:
+                participation_level = st.selectbox(
+                    "Filter by Participation",
+                    ["All", "High (>80%)", "Medium (50-80%)", "Low (<50%)"]
+                )
+            with col3:
+                struggling_topic = st.selectbox(
+                    "Filter by Struggling Topic",
+                    ["All"] + list(set([topic for student in analytics["student_analytics"] 
+                                    for topic in student["struggling_topics"]]))
+                )
+            # st.markdown('</div>', unsafe_allow_html=True)
+
+        # Display student metrics in a grid
+        st.markdown('<div class="analytics-grid">', unsafe_allow_html=True)
+        for student in analytics["student_analytics"]:
+            # Apply filters
+            if (concept_understanding != "All" and 
+                student["engagement_metrics"]["concept_understanding"].replace("_", " ").title() != concept_understanding):
                 continue
                 
-        if struggling_topic != "All" and struggling_topic not in student["struggling_topics"]:
-            continue
+            participation = student["engagement_metrics"]["participation_level"] * 100
+            if participation_level != "All":
+                if participation_level == "High (>80%)" and participation <= 80:
+                    continue
+                elif participation_level == "Medium (50-80%)" and (participation < 50 or participation > 80):
+                    continue
+                elif participation_level == "Low (<50%)" and participation >= 50:
+                    continue
+                    
+            if struggling_topic != "All" and struggling_topic not in student["struggling_topics"]:
+                continue
 
-        st.markdown(f"""
-            <div class="student-metrics-card">
-                <div class="header">
-                    <span class="student-id">Student {student["student_id"][-6:]}</span>
+            st.markdown(f"""
+                <div class="student-metrics-card">
+                    <div class="header">
+                        <span class="student-id">Student {student["student_id"][-6:]}</span>
+                    </div>
+                    <div class="metrics-grid">
+                        <div class="metric-box">
+                            <div class="label">Participation</div>
+                            <div class="value">{student["engagement_metrics"]["participation_level"]*100:.1f}%</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="label">Understanding</div>
+                            <div class="value">{student["engagement_metrics"]["concept_understanding"].replace('_', ' ').title()}</div>
+                        </div>
+                        <div class="struggling-topics">
+                            <div class="label">Struggling Topics: </div>
+                            <div class="value">{", ".join(student["struggling_topics"]) if student["struggling_topics"] else "None"}</div>
+                        </div>
+                        <div class="recommendation-text">
+                            {student["personalized_recommendation"]}
+                        </div>
+                    </div>
                 </div>
-                <div class="metrics-grid">
-                    <div class="metric-box">
-                        <div class="label">Participation</div>
-                        <div class="value">{student["engagement_metrics"]["participation_level"]*100:.1f}%</div>
-                    </div>
-                    <div class="metric-box">
-                        <div class="label">Understanding</div>
-                        <div class="value">{student["engagement_metrics"]["concept_understanding"].replace('_', ' ').title()}</div>
-                    </div>
-                    <div class="struggling-topics">
-                        <div class="label">Struggling Topics: </div>
-                        <div class="value">{", ".join(student["struggling_topics"]) if student["struggling_topics"] else "None"}</div>
-                    </div>
-                    <div class="recommendation-text">
-                        {student["personalized_recommendation"]}
-                    </div>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 def reset_analytics_state():
     """
