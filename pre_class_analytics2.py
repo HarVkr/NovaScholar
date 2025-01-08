@@ -586,7 +586,8 @@ class NovaScholarAnalytics:
             response = self.model.generate_content(
                 prompt,
                 generation_config=genai.GenerationConfig(
-                    response_mime_type="application/json"
+                    response_mime_type="application/json",
+                    temperature=0.15
                     # response_schema=AnalyticsResponse
                 )
             )

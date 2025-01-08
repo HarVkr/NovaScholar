@@ -1222,7 +1222,7 @@ def extract_topics_from_materials(session):
         """
         try:
             # response = model.generate_content(context_prompt, generation_config=genai.GenerationConfig(response_mime_type="application/json", response_schema=list[Topics]))
-            response = model.generate_content(context_prompt)
+            response = model.generate_content(context_prompt, generation_config=genai.GenerationConfig(temperature=0.3))
             if not response or not response.text:
                 st.error("Error extracting topics from materials.")
                 return
@@ -1335,14 +1335,8 @@ def display_preclass_analytics2(session, course_id):
     # Initialize or get analytics data from session state
     if 'analytics_data' not in st.session_state:
         st.session_state.analytics_data = get_preclass_analytics(session)
-    if 'topic_indices'not in st.session_state:
-        st.session_state.topic_indices = None 
-    
-    if st.session_state.analytics_data:
-        analytics = st.session_state.analytics_data
-    else:
-        st.info("No analytics data found for this session.")
-        return
+
+    analytics = st.session_state.analytics_data
     
     print(analytics)
     # Enhanced CSS for better styling and interactivity

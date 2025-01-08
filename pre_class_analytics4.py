@@ -24,6 +24,7 @@ class TopicDifficulty(Enum):
     DIFFICULT = "difficult"
     VERY_DIFFICULT = "very_difficult"
 
+
 @dataclass
 class QuestionMetrics:
     complexity_score: float
@@ -40,6 +41,16 @@ class TopicInsights:
     time_distribution: Dict[str, float]
     engagement_metrics: Dict[str, float]
     recommended_focus_areas: List[str]
+
+    def to_dict(self):
+        return {
+            "difficulty_level": self.difficulty_level.value,  # Convert enum to its value
+            "common_confusion_points": self.common_confusion_points,
+            "question_patterns": self.question_patterns,
+            "time_distribution": {str(k): v for k, v in self.time_distribution.items()},
+            "engagement_metrics": self.engagement_metrics,
+            "recommended_focus_areas": self.recommended_focus_areas,
+        }
 
 class PreClassAnalytics:
     def __init__(self, nlp_model: str = "en_core_web_lg"):
@@ -64,9 +75,21 @@ class PreClassAnalytics:
         for chat in chat_history:
             user_id = chat['user_id']['$oid']
             for msg in chat['messages']:
+                try:
+                    # Ensure the timestamp is in the correct format
+                    if isinstance(msg['timestamp'], dict) and '$date' in msg['timestamp']:
+                        timestamp = pd.to_datetime(msg['timestamp']['$date'])
+                    elif isinstance(msg['timestamp'], str):
+                        timestamp = pd.to_datetime(msg['timestamp'])
+                    else:
+                        raise ValueError("Invalid timestamp format")
+                except Exception as e:
+                    print(f"Error parsing timestamp: {msg['timestamp']}, error: {e}")
+                    timestamp = pd.NaT  # Use NaT (Not a Time) for invalid timestamps
+                
                 messages.append({
                     'user_id': user_id,
-                    'timestamp': pd.to_datetime(msg['timestamp']['$date']),
+                    'timestamp': timestamp,
                     'prompt': msg['prompt'],
                     'response': msg['response'],
                     'is_question': any(q in msg['prompt'].lower() for q in self.question_indicators),
@@ -505,17 +528,55 @@ class PreClassAnalytics:
         )
         
         # Analyze learning trends
-        sentiment_trend = report['temporal_analysis']['learning_trends']['sentiment_trend']
-        if sentiment_trend < 0:
-            recommendations.append(
-                "Review teaching approach to address declining student satisfaction"
-            )
+        # sentiment_trend = report['temporal_analysis']['learning_trends']['sentiment_trend']
+        # if sentiment_trend < 0:
+        #     recommendations.append(
+        #         "Review teaching approach to address declining student satisfaction"
+        #     )
+        # Analyze learning trends
+        # Analyze learning trends
+        sentiment_trend = report.get('temporal_analysis', {}).get('learning_trends', {}).get('sentiment_trend', None)
+        if isinstance(sentiment_trend, (int, float)):
+            if sentiment_trend < 0:
+                recommendations.append(
+                    "Review teaching approach to address declining student satisfaction"
+                )
+        elif isinstance(sentiment_trend, dict):
+            # Handle the case where sentiment_trend is a dictionary
+            print(f"Unexpected dict format for sentiment_trend: {sentiment_trend}")
+        else:
+            print(f"Unexpected type for sentiment_trend: {type(sentiment_trend)}")
         
         return recommendations
 
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, TopicDifficulty):
+            return obj.value
+        if isinstance(obj, TopicInsights):
+            return obj.to_dict()
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
+def convert_insights_to_dict(report):
+    for main_topic, data in report['topics'].items():
+        if isinstance(data['insights'], TopicInsights):
+            data['insights'] = data['insights'].to_dict()
+        for subtopic, subdata in data['subtopics'].items():
+            if isinstance(subdata['insights'], TopicInsights):
+                subdata['insights'] = subdata['insights'].to_dict()
+
 if __name__ == "__main__":
     # Load chat history data
-    with open("chat_history_corpus.json", "r", encoding="utf-8") as file:
+    chat_history = None
+    with open('sample_files/chat_history_corpus.json', 'r', encoding="utf-8") as file:
         chat_history = json.load(file)
     
     # Initialize analytics system
@@ -523,4 +584,9 @@ if __name__ == "__main__":
     
     # Generate comprehensive report
     report = analytics.generate_comprehensive_report(chat_history)
-    print(json.dumps(report, indent=2))
+
+    # Convert insights to dictionary
+    # convert_insights_to_dict(report)
+    
+    print(json.dumps(report, indent=4, cls=CustomJSONEncoder))
+    # print(report)
