@@ -20,12 +20,12 @@ from create_course import courses_collection
 from pre_class_analytics2 import NovaScholarAnalytics
 import openai
 from openai import OpenAI
-
 import google.generativeai as genai
 from goals2 import GoalAnalyzer
 from openai import OpenAI
 import asyncio
 import numpy as np
+import re
 from analytics import derive_analytics, create_embeddings, cosine_similarity
 
 load_dotenv()
@@ -36,6 +36,7 @@ client = MongoClient(MONGO_URI)
 db = client["novascholar_db"]
 polls_collection = db["polls"]
 subjective_tests_collection = db["subjective_tests"]
+synoptic_store_collection = db["synoptic_store"]
 
 def get_current_user():
     if 'current_user' not in st.session_state:
@@ -532,6 +533,8 @@ def display_post_class_content(session, student_id, course_id):
     if st.session_state.user_type == 'faculty':
         faculty_id = st.session_state.user_id
         st.subheader("Create Subjective Test")
+        
+        # Create a form for test generation
         with st.form("create_subjective_test_form"):
             test_title = st.text_input("Test Title")
             num_subjective_questions = st.number_input("Number of Subjective Questions", min_value=1, value=5)
@@ -539,39 +542,96 @@ def display_post_class_content(session, student_id, course_id):
                 "Question Generation Method",
                 ["Generate from Pre-class Materials", "Generate Random Questions"]
             )
-            submit_subjective_test_btn = st.form_submit_button("Generate Subjective Test")
+            generate_test_btn = st.form_submit_button("Generate Test")
 
-            if submit_subjective_test_btn:
-                context = ""
-                if generation_method == "Generate from Pre-class Materials":
-                    materials = resources_collection.find({"session_id": session['session_id']})
-                    for material in materials:
-                        if 'text_content' in material:
-                            context += material['text_content'] + "\n"
+        # Handle test generation outside the form
+        if generate_test_btn:
+            if not test_title:
+                st.error("Please enter a test title.")
+                return
 
-                # Generate the subjective questions
-                subjective_questions = generate_subjective_questions(
-                    context if context else None,
-                    num_subjective_questions,
-                    session['title'],
-                    session.get('description', '')
-                )
+            context = ""
+            if generation_method == "Generate from Pre-class Materials":
+                materials = resources_collection.find({"session_id": session['session_id']})
+                for material in materials:
+                    if 'text_content' in material:
+                        context += material['text_content'] + "\n"
 
-                if subjective_questions:
-                    st.subheader("Preview Subjective Questions")
-                    for i, q in enumerate(subjective_questions, 1):
-                        st.markdown(f"**Question {i}:** {q['question']}")
-
-                    test_id = save_subjective_test(
-                        course_id,
-                        session['session_id'],
-                        test_title,
-                        subjective_questions
+            with st.spinner("Generating questions and synoptic..."):
+                try:
+                    # Store generated content in session state to persist between rerenders
+                    questions = generate_questions(
+                        context if context else None,
+                        num_subjective_questions,
+                        session['title'],
+                        session.get('description', '')
                     )
-                    if test_id:
-                        st.success("Subjective test saved successfully!")
+                    
+                    if questions:
+                        synoptic = generate_synoptic(
+                            questions,
+                            context if context else None,
+                            session['title'],
+                            num_subjective_questions
+                        )
+                        
+                        if synoptic:
+                            # Store in session state
+                            st.session_state.generated_questions = questions
+                            st.session_state.generated_synoptic = synoptic
+                            st.session_state.test_title = test_title
+                            
+                            # Display preview
+                            st.subheader("Preview Subjective Questions and Synoptic")
+                            for i, (q, s) in enumerate(zip(questions, synoptic), 1):
+                                st.markdown(f"**Question {i}:** {q['question']}")
+                                with st.expander(f"View Synoptic {i}"):
+                                    st.markdown(s)
+                            
+                            # Save button outside the form
+                            if st.button("Save Test"):
+                                test_id = save_subjective_test(
+                                    course_id,
+                                    session['session_id'],
+                                    test_title,
+                                    questions,
+                                    synoptic
+                                )
+                                if test_id:
+                                    st.success("Subjective test saved successfully!")
+                                else:
+                                    st.error("Error saving subjective test.")
+                        else:
+                            st.error("Error generating synoptic answers. Please try again.")
                     else:
-                        st.error("Error saving subjective test.")
+                        st.error("Error generating questions. Please try again.")
+                except Exception as e:
+                    st.error(f"An error occurred: {str(e)}")
+
+        # Display previously generated test if it exists in session state
+        elif hasattr(st.session_state, 'generated_questions') and hasattr(st.session_state, 'generated_synoptic'):
+            st.subheader("Preview Subjective Questions and Synoptic")
+            for i, (q, s) in enumerate(zip(st.session_state.generated_questions, st.session_state.generated_synoptic), 1):
+                st.markdown(f"**Question {i}:** {q['question']}")
+                with st.expander(f"View Synoptic {i}"):
+                    st.markdown(s)
+            
+            if st.button("Save Test"):
+                test_id = save_subjective_test(
+                    course_id,
+                    session['session_id'],
+                    st.session_state.test_title,
+                    st.session_state.generated_questions,
+                    st.session_state.generated_synoptic
+                )
+                if test_id:
+                    st.success("Subjective test saved successfully!")
+                    # Clear session state after successful save
+                    del st.session_state.generated_questions
+                    del st.session_state.generated_synoptic
+                    del st.session_state.test_title
+                else:
+                    st.error("Error saving subjective test.")
 
         # st.subheader("Create quiz section UI for faculty")
         st.subheader("Create Quiz")
@@ -1680,11 +1740,7 @@ def display_session_analytics(session, course_id):
 
     # Display Post-class Analytics
     display_postclass_analytics(session, course_id)
-
-
-
-
-
+    
 def upload_preclass_materials(session_id, course_id):
     """Upload pre-class materials for a session"""
     st.subheader("Upload Pre-class Materials")
@@ -1903,7 +1959,7 @@ def display_session_content(student_id, course_id, session, username, user_type)
         with tabs[2]:
             display_post_class_content(session, student_id, course_id)
         with tabs[3]:
-            display_preclass_analytics2(session, course_id)
+            display_preclass_analytics(session, course_id)
         with tabs[4]:
             display_inclass_analytics(session, course_id)
         with tabs[5]:
@@ -1912,94 +1968,211 @@ def display_session_content(student_id, course_id, session, username, user_type)
             st.subheader("End Terms")
             st.info("End term content will be available soon.")
 
-def generate_subjective_questions(context, num_questions, session_title, session_description):
-    """Generate subjective questions either from context or session details"""
-    try:
-        # Construct the prompt based on available content
-        if context:
-            prompt = f"""Generate {num_questions} subjective questions based on this content:
-            {context}
-            
-            The questions should test deep understanding of the topic: {session_title}
-            
-            Each question should be formatted as a dictionary like this example:
-            {{"question": "What are the key factors that influence...?"}}
-            
-            Return only a Python list of {num_questions} question dictionaries.
-            Example format:
-            [
-                {{"question": "First question here?"}},
-                {{"question": "Second question here?"}}
-            ]
-            
-            Make questions that:
-            - Require detailed explanations
-            - Test critical thinking
-            - Need examples or case studies
-            - Ask for analysis or evaluation
-            """
-        else:
-            prompt = f"""Generate {num_questions} subjective questions about:
-            Topic: {session_title}
-            Description: {session_description}
-            
-            Each question should be formatted as a dictionary like this example:
-            {{"question": "What are the key factors that influence...?"}}
-            
-            Return only a Python list of {num_questions} question dictionaries.
-            Example format:
-            [
-                {{"question": "First question here?"}},
-                {{"question": "Second question here?"}}
-            ]
-            
-            Make questions that:
-            - Require detailed explanations
-            - Test critical thinking
-            - Need examples or case studies
-            - Ask for analysis or evaluation
-            """
-
-        # Generate response using the model
-        response = model.generate_content(prompt)
-        response_text = response.text.strip()
+def parse_model_response(response_text):
+    """Enhanced parser for model responses with better error handling.
     
-        response_text = response_text.replace('```python', '').replace('```', '').strip()
+    Args:
+        response_text (str): Raw response text from the model
         
-        # Safely evaluate the response into a Python object
-        questions = eval(response_text)
+    Returns:
+        dict or list: Parsed response object
         
-        # Validate the response
+    Raises:
+        ValueError: If parsing fails
+    """
+    import json
+    import ast
+    import re
+    
+    # Remove markdown formatting and whitespace
+    cleaned_text = re.sub(r'```[a-zA-Z]*\n', '', response_text)
+    cleaned_text = cleaned_text.replace('```', '').strip()
+    
+    # Try multiple parsing methods
+    parsing_methods = [
+        # Method 1: Direct JSON parsing
+        lambda x: json.loads(x),
+        
+        # Method 2: AST literal evaluation
+        lambda x: ast.literal_eval(x),
+        
+        # Method 3: Extract and parse content between curly braces
+        lambda x: json.loads(re.search(r'\{.*\}', x, re.DOTALL).group()),
+        
+        # Method 4: Extract and parse content between square brackets
+        lambda x: json.loads(re.search(r'\[.*\]', x, re.DOTALL).group()),
+        
+        # Method 5: Try to fix common JSON formatting issues and parse
+        lambda x: json.loads(x.replace("'", '"').replace('\n', '\\n'))
+    ]
+    
+    last_error = None
+    for parse_method in parsing_methods:
+        try:
+            result = parse_method(cleaned_text)
+            if result:  # Ensure we have actual content
+                return result
+        except Exception as e:
+            last_error = e
+            continue
+            
+    raise ValueError(f"Could not parse the model's response: {last_error}")
+
+def generate_questions(context, num_questions, session_title, session_description):
+    """Generate subjective questions based on context or session details"""
+    try:
+        # Construct the prompt
+        prompt = f"""You are a professional educator creating {num_questions} subjective questions.
+        
+        Topic: {session_title}
+        Description: {session_description}
+        {'Context: ' + context if context else ''}
+        
+        Generate exactly {num_questions} questions in this specific format:
+        [
+            {{"question": "Write your first question here?"}},
+            {{"question": "Write your second question here?"}}
+        ]
+        
+        Requirements:
+        1. Questions must require detailed explanations
+        2. Focus on critical thinking and analysis
+        3. Ask for specific examples or case studies
+        4. Questions should test deep understanding
+        
+        IMPORTANT: Return ONLY the JSON array. Do not include any additional text or explanations.
+        """
+
+        # Generate response
+        response = model.generate_content(prompt)
+        questions = parse_model_response(response.text)
+        
+        # Validate response
         if not isinstance(questions, list):
             raise ValueError("Generated content is not a list")
         
         if len(questions) != num_questions:
             raise ValueError(f"Generated {len(questions)} questions instead of {num_questions}")
-        
-        # Basic validation of question format
-        valid_questions = []
+            
+        # Validate each question
         for q in questions:
-            if isinstance(q, dict) and 'question' in q and isinstance(q['question'], str):
-                valid_questions.append(q)
+            if not isinstance(q, dict) or 'question' not in q:
+                raise ValueError("Invalid question format")
+        
+        return questions
+
+    except Exception as e:
+        print(f"Error generating questions: {str(e)}")
+        return None
+
+def generate_synoptic(questions, context, session_title, num_questions):
+    """Generate synoptic answers for the questions with improved error handling and response validation.
+    
+    Args:
+        questions (list): List of question dictionaries
+        context (str): Additional context for answer generation
+        session_title (str): Title of the session
+        num_questions (int): Expected number of questions
+        
+    Returns:
+        list: List of synoptic answers or None if generation fails
+    """
+    try:
+        # First, let's validate our input
+        if not questions or not isinstance(questions, list):
+            raise ValueError("Questions must be provided as a non-empty list")
+            
+        # Format questions for better prompt clarity
+        formatted_questions = "\n".join(
+            f"{i+1}. {q['question']}" 
+            for i, q in enumerate(questions)
+        )
+        
+        # Construct a more structured prompt
+        prompt = f"""You are a subject matter expert creating detailed model answers for {num_questions} questions about {session_title}.
+
+        Here are the questions:
+        {formatted_questions}
+        {f'Additional context: {context}' if context else ''}
+
+        Please provide {num_questions} comprehensive answers following this JSON format:
+        {{
+            "answers": [
+                {{
+                    "answer": "Your detailed answer for question 1...",
+                    "key_points": ["Point 1", "Point 2", "Point 3"]
+                }},
+                {{
+                    "answer": "Your detailed answer for question 2...",
+                    "key_points": ["Point 1", "Point 2", "Point 3"]
+                }}
+            ]
+        }}
+
+        Requirements for each answer:
+        1. Minimum 150 words
+        2. Include specific examples and evidence
+        3. Reference key concepts and terminology
+        4. Demonstrate critical analysis
+        5. Structure with clear introduction, body, and conclusion
+
+        IMPORTANT: Return ONLY the JSON object with the answers array. No additional text.
+        """
+
+        # Generate response
+        response = model.generate_content(prompt)
+        
+        # Parse and validate the response
+        parsed_response = parse_model_response(response.text)
+        
+        # Additional validation of parsed response
+        if not isinstance(parsed_response, (dict, list)):
+            raise ValueError("Response must be a dictionary or list")
+            
+        # Handle both possible valid response formats
+        if isinstance(parsed_response, dict):
+            answers = parsed_response.get('answers', [])
+        else:  # If it's a list
+            answers = parsed_response
+        
+        # Validate answer count
+        if len(answers) != num_questions:
+            raise ValueError(f"Expected {num_questions} answers, got {len(answers)}")
+        
+        # Extract just the answer texts for consistency with existing code
+        final_answers = []
+        for ans in answers:
+            if isinstance(ans, dict):
+                answer_text = ans.get('answer', '')
+                key_points = ans.get('key_points', [])
+                formatted_answer = f"{answer_text}\n\nKey Points:\n" + "\n".join(f"• {point}" for point in key_points)
+                final_answers.append(formatted_answer)
             else:
-                print(f"Invalid question format: {q}")
+                final_answers.append(str(ans))
         
-        if not valid_questions:
-            raise ValueError("No valid questions generated")
+        # Final validation of the answers
+        for i, answer in enumerate(final_answers):
+            if not answer or len(answer.split()) < 50:  # Basic length check
+                raise ValueError(f"Answer {i+1} is too short or empty")
         
-        return valid_questions
+        # Save the synoptic to the synoptic_store collection
+        synoptic_data = {
+            "session_title": session_title,
+            "questions": questions,
+            "synoptic": final_answers,
+            "created_at": datetime.utcnow()
+        }
+        synoptic_store_collection.insert_one(synoptic_data)
+        
+        return final_answers
 
     except Exception as e:
-        print(f"Error in generate_subjective_questions: {str(e)}")
-        print(f"Response text was: {response.text if 'response' in locals() else 'No response generated'}")
+        # Log the error for debugging
+        print(f"Error in generate_synoptic: {str(e)}")
+        print(f"Response text: {response.text if 'response' in locals() else 'No response generated'}")
         return None
 
-    except Exception as e:
-        print(f"Error generating subjective questions: {e}")
-        st.error("Failed to generate subjective questions. Please try again.")
-        return None
-
-def save_subjective_test(course_id, session_id, title, questions):
+def save_subjective_test(course_id, session_id, title, questions, synoptic):
     """Save subjective test to database"""
     try:
         # Format questions to include metadata
@@ -2018,6 +2191,7 @@ def save_subjective_test(course_id, session_id, title, questions):
             "session_id": session_id,
             "title": title,
             "questions": formatted_questions,
+            "synoptic": synoptic,
             "created_at": datetime.utcnow(),
             "status": "active",
             "submissions": []
@@ -2030,35 +2204,14 @@ def save_subjective_test(course_id, session_id, title, questions):
         return None
 
 def submit_subjective_test(test_id, student_id, student_answers):
-    """
-    Submit and store student's subjective test answers
-    
-    Args:
-        test_id: MongoDB ObjectId or string of the test
-        student_id: MongoDB ObjectId or string of the student
-        student_answers: List of answer strings
-        
-    Returns:
-        bool: True if submission successful, False otherwise
-    """
+    """Submit subjective test answers and trigger analysis"""
     try:
-        # Convert string IDs to ObjectId if needed
-        test_id = ObjectId(test_id) if isinstance(test_id, str) else test_id
-        
-        # Validate inputs
-        if not student_answers or not all(isinstance(ans, str) for ans in student_answers):
-            print("Error: Invalid answer format")
-            return False
-            
         submission_data = {
             "student_id": student_id,
             "answers": student_answers,
-            "submitted_at": datetime.utcnow(),
-            "status": "submitted",
-            "score": None  # Will be updated after grading
+            "submitted_at": datetime.utcnow()
         }
         
-        # Update the test document with the new submission
         result = subjective_tests_collection.update_one(
             {"_id": test_id},
             {
@@ -2070,231 +2223,38 @@ def submit_subjective_test(test_id, student_id, student_answers):
         
         if result.modified_count > 0:
             try:
-                # Trigger asynchronous grading if needed
-                judge_subjective_test_answers(test_id, student_id)
+                # Trigger grading and analysis
+                analysis = analyze_subjective_answers(test_id, student_id)
+                if analysis:
+                    # Update the submission with the analysis and score
+                    subjective_tests_collection.update_one(
+                        {"_id": test_id, "submissions.student_id": student_id},
+                        {
+                            "$set": {
+                                "submissions.$.analysis": analysis,
+                                "submissions.$.score": analysis.get('correctness_score')
+                            }
+                        }
+                    )
+                    return True
+                else:
+                    print("Error: Analysis failed")
+                    return False
             except Exception as e:
                 print(f"Warning: Grading failed but submission was saved: {e}")
-                # We still return True since the submission itself was successful
-            return True
+                return True  # We still return True since the submission itself was successful
             
         print("Error: No document was modified")
         return False
         
     except Exception as e:
-        print(f"Error submitting subjective test: {str(e)}", flush=True)
+        print(f"Error submitting subjective test: {str(e)}")
         return False
-    
-# session_page.py
-def judge_subjective_test_answers(test_id, student_id):
-    test_doc = subjective_tests_collection.find_one({"_id": test_id})
-    submission = next(
-        (sub for sub in test_doc.get('submissions', []) if sub['student_id'] == student_id),
-        None
-    )
-    if not submission:
-        return
 
-    # Combine answers
-    answers_text = "\n".join(submission['answers'])
-
-    # 1. Get Perplexity (or LLM) analysis
-    analyzer = GoalAnalyzer(api_key=PERPLEXITY_API_KEY)
-    analysis = asyncio.run(analyzer.get_perplexity_analysis(answers_text, "SubjectiveTestAnalysis"))
-
-    # 2. Get correctness score from OpenAI LLM
-    correctness = derive_analytics(
-        goal="Correctness Score",
-        reference_text=answers_text,
-        openai_api_key=OPENAI_API_KEY
-    )
-
-    # 3. Suggest improvements (from [modules/analytics.py](modules/analytics.py))
-    suggestions = derive_analytics(
-        goal="Improve Answer",
-        reference_text=answers_text,
-        openai_api_key=OPENAI_API_KEY
-    )
-
-    # 4. Additional frequent word/concept analysis
-    from collections import Counter
-    words = answers_text.split()
-    word_count = Counter(words)
-    most_common_words = word_count.most_common(5)  # Top 5 frequent words
-
-    # 5. Store results for both faculty & student
-    subjective_tests_collection.update_one(
-        {"_id": test_id, "submissions.student_id": student_id},
-        {
-            "$set": {
-                "submissions.$.analysis": analysis,
-                "submissions.$.correctness": correctness,
-                "submissions.$.suggestions": suggestions,
-                "submissions.$.common_words": most_common_words
-            }
-        }
-    )
-
-def display_subjective_test_tab(student_id, course_id, session_id):
-    """Display subjective tests for students with improved error handling"""
-    st.header("Subjective Tests")
-    
-    try:
-        # Convert string IDs to ObjectId if needed
-        student_id = str(student_id)  # Ensure student_id is string for comparison
-        
-        # Get tests with proper query and error handling
-        tests_cursor = subjective_tests_collection.find({
-            "course_id": course_id,
-            "session_id": session_id,
-            "status": "active"
-        })
-        
-        subjective_tests = list(tests_cursor)
-
-        if not subjective_tests:
-            st.info("No subjective tests available for this session.")
-            return
-            
-        # Get pre-class materials with error handling
-        materials_cursor = resources_collection.find({
-            "course_id": course_id,
-            "session_id": session_id
-        })
-        
-        preclass_materials = list(materials_cursor)
-        preclass_materials_content = ""
-        for material in preclass_materials:
-            if material.get('text_content'):
-                preclass_materials_content += material['text_content'] + "\n"
-
-        for test in subjective_tests:
-            with st.expander(f"📝 {test.get('title', 'Untitled Test')}", expanded=True):
-                test_tab, analysis_tab = st.tabs(["Test", "Analysis"])
-                
-                with test_tab:
-                    # Find existing submission with proper error handling
-                    existing_submission = None
-                    if 'submissions' in test:
-                        for sub in test['submissions']:
-                            if sub.get('student_id') == student_id:
-                                existing_submission = sub
-                                break
-                    
-                    if existing_submission:
-                        st.success("Test completed! Your answers have been submitted.")
-                        st.subheader("Your Answers")
-                        
-                        # Safely access questions and answers
-                        questions = test.get('questions', [])
-                        answers = existing_submission.get('answers', [])
-                        
-                        for i, (question, answer) in enumerate(zip(questions, answers)):
-                            st.markdown(f"**Question {i+1}:** {question.get('question', 'Question not available')}")
-                            st.markdown(f"**Your Answer:** {answer}")
-                            
-                            try:
-                                # Generate analysis for each answer
-                                analysis = derive_analytics(
-                                    goal="Analyze Subjective Answer",
-                                    reference_text=answer,
-                                    openai_api_key=OPENAI_API_KEY,
-                                    context=preclass_materials_content
-                                )
-                                
-                                # Safely update submission with analysis
-                                if analysis:
-                                    if 'answer_analyses' not in existing_submission:
-                                        existing_submission['answer_analyses'] = {}
-                                    existing_submission['answer_analyses'][str(i)] = analysis
-                                    
-                                    # Update the submission in the database
-                                    update_result = subjective_tests_collection.update_one(
-                                        {
-                                            "_id": test['_id'],
-                                            "submissions.student_id": student_id
-                                        },
-                                        {
-                                            "$set": {
-                                                "submissions.$": existing_submission
-                                            }
-                                        }
-                                    )
-                                    
-                                    if update_result.modified_count == 0:
-                                        print(f"Warning: Failed to update analysis for question {i}")
-                                        
-                            except Exception as e:
-                                print(f"Error generating analysis for question {i}: {str(e)}")
-                                st.warning(f"Analysis generation failed for question {i+1}")
-                            
-                            st.markdown("---")
-                    else:
-                        st.write("Please write your answers:")
-                        with st.form(key=f"subjective_test_form_{test['_id']}"):
-                            student_answers = []
-                            for i, question in enumerate(test.get('questions', [])):
-                                st.markdown(f"**Question {i+1}:** {question.get('question', 'Question not available')}")
-                                answer = st.text_area(
-                                    "Your answer:",
-                                    key=f"q_{test['_id']}_{i}",
-                                    height=200
-                                )
-                                student_answers.append(answer)
-
-                            if st.form_submit_button("Submit Test"):
-                                if all(answer.strip() for answer in student_answers):
-                                    try:
-                                        success = submit_subjective_test(
-                                            test['_id'],
-                                            student_id,
-                                            student_answers
-                                        )
-                                        if success:
-                                            st.success("Test submitted successfully!")
-                                            st.rerun()
-                                        else:
-                                            st.error("Error submitting test. Please try again.")
-                                    except Exception as e:
-                                        st.error(f"Failed to submit test: {str(e)}")
-                                else:
-                                    st.error("Please answer all questions before submitting.")
-                
-                with analysis_tab:
-                    if existing_submission and existing_submission.get('answer_analyses'):
-                        st.subheader("Answer Analysis")
-                        for i, analysis in existing_submission['answer_analyses'].items():
-                            question_num = int(i) + 1
-                            st.markdown(f"### Question {question_num}")
-                            
-                            # Safely split and display analysis sections
-                            try:
-                                sections = analysis.split("**")
-                                for j in range(1, len(sections), 2):
-                                    if j < len(sections):
-                                        section_title = sections[j]
-                                        section_content = sections[j + 1] if j + 1 < len(sections) else ""
-                                        st.markdown(f"#### {section_title}")
-                                        st.markdown(section_content)
-                            except Exception as e:
-                                print(f"Error displaying analysis for question {question_num}: {str(e)}")
-                                st.error(f"Error displaying analysis for question {question_num}")
-                            
-                            st.markdown("---")
-                    else:
-                        st.info("Submit your test to view the analysis.")
-                                
-    except Exception as e:
-        error_msg = f"Error loading subjective tests: {str(e)}"
-        print(error_msg, flush=True)
-        st.error("Unable to load subjective tests. Please try again later.")
-
-def analyze_subjective_answers(test_id, student_id, context):
+def analyze_subjective_answers(test_id, student_id):
     """Analyze subjective test answers for correctness and improvements"""
     try:
         # Get test and submission details
-        if isinstance(test_id, str):
-            test_id = ObjectId(test_id)
-            
         test_doc = subjective_tests_collection.find_one({"_id": test_id})
         if not test_doc:
             print(f"Test document not found for test_id: {test_id}")
@@ -2317,118 +2277,130 @@ def analyze_subjective_answers(test_id, student_id, context):
             print("No questions or answers found")
             return None
             
-        # Create formatted content for analysis
-        analysis_content = ""
-        for q, a in zip(questions, student_answers):
-            analysis_content += f"Question: {q['question']}\nAnswer: {a}\n\n"
-            
-        # Initialize OpenAI client
-        client = OpenAI(api_key=OPENAI_API_KEY)
+        # Retrieve the synoptic from the synoptic_store collection
+        synoptic_doc = synoptic_store_collection.find_one({"session_title": test_doc.get('title')})
+        synoptic = synoptic_doc.get('synoptic', '') if synoptic_doc else ''
         
-        # Generate content analysis using OpenAI
-        try:
-            analysis_prompt = f"""
-            Analyze the following test answers. Provide a detailed evaluation of:
-            1. Understanding of concepts
-            2. Clarity of expression
-            3. Completeness of answers
-            4. Areas of strength
-            
-            Content to analyze:
-            {analysis_content}
-            """
-            
-            analysis_response = client.chat.completions.create(
-                model="gpt-4-0125-preview",
-                messages=[
-                    {"role": "system", "content": "You are an educational assessment expert."},
-                    {"role": "user", "content": analysis_prompt}
-                ],
-                temperature=0.7
-            )
-            analytics = analysis_response.choices[0].message.content
-            
-            # Generate improvement suggestions
-            improvement_prompt = f"""
-            Based on these test answers, provide specific suggestions for improvement:
-            
-            {analysis_content}
-            
-            Focus on:
-            1. Areas that need more detail
-            2. Concepts that could be explained better
-            3. Specific examples that could be added
-            4. How to strengthen the arguments
-            """
-            
-            improvement_response = client.chat.completions.create(
-                model="gpt-4-0125-preview",
-                messages=[
-                    {"role": "system", "content": "You are an educational assessment expert."},
-                    {"role": "user", "content": improvement_prompt}
-                ],
-                temperature=0.7
-            )
-            improvements = improvement_response.choices[0].message.content
-            
-        except Exception as e:
-            print(f"Error in generating analysis with OpenAI: {str(e)}")
-            analytics = "Error generating analysis"
-            improvements = "Error generating improvements"
-            
-        # Calculate similarity score
-        try:
-            # Create embeddings using OpenAI
-            embedding_response = client.embeddings.create(
-                model="text-embedding-3-small",
-                input=[context, analysis_content]
-            )
-            
-            context_embedding = embedding_response.data[0].embedding
-            answer_embedding = embedding_response.data[1].embedding
-            
-            # Convert to numpy arrays and calculate similarity
-            context_array = np.array(context_embedding).reshape(1, -1)
-            answer_array = np.array(answer_embedding).reshape(1, -1)
-            similarity_score = float(cosine_similarity(context_array, answer_array)[0][0])
-            
-        except Exception as e:
-            print(f"Error in calculating similarity: {str(e)}")
-            similarity_score = 0.0
+        # Analyze each question separately
+        all_analyses = []
+        total_score = 0
         
-        # Store analysis results
-        analysis_results = {
-            "similarity_score": similarity_score,
-            "content_analysis": analytics,
-            "suggested_improvements": improvements,
-            "analyzed_at": datetime.utcnow()
-        }
-        
-        try:
-            # Update the submission with analysis
-            update_result = subjective_tests_collection.update_one(
-                {
-                    "_id": test_id,
-                    "submissions.student_id": student_id
-                },
-                {
-                    "$set": {
-                        "submissions.$.analysis": analysis_results
-                    }
-                }
+        for i, (question, answer) in enumerate(zip(questions, student_answers), 1):
+            # Format content for individual question
+            analysis_content = f"Question {i}: {question['question']}\nAnswer: {answer}\n\n"
+            
+            # Get analysis for this question
+            individual_analysis = derive_analytics(
+                goal="Analyze and Grade",
+                reference_text=analysis_content,
+                openai_api_key=OPENAI_API_KEY,
+                context=test_doc.get('context', ''),
+                synoptic=synoptic[i-1] if isinstance(synoptic, list) else synoptic
             )
             
-            if update_result.modified_count == 0:
-                print("Warning: Analysis results not saved to database")
+            if individual_analysis:
+                # Extract score for this question
+                try:
+                    score_match = re.search(r'(\d+)(?:/10)?', individual_analysis)
+                    if score_match:
+                        question_score = int(score_match.group(1))
+                        if 1 <= question_score <= 10:
+                            total_score += question_score
+                except:
+                    question_score = 0
                 
-        except Exception as e:
-            print(f"Error updating database with analysis: {str(e)}")
+                # Format individual analysis
+                formatted_analysis = f"\n\n## Question {i} Analysis\n\n{individual_analysis}"
+                all_analyses.append(formatted_analysis)
+        
+        if not all_analyses:
+            print("Error: No analyses generated")
+            return None
+            
+        # Calculate average score
+        average_score = round(total_score / len(questions)) if questions else 0
+        
+        # Combine all analyses
+        combined_analysis = "\n".join(all_analyses)
+        
+        # Format final results
+        analysis_results = {
+            "content_analysis": combined_analysis,
+            "analyzed_at": datetime.utcnow(),
+            "correctness_score": average_score
+        }
         
         return analysis_results
         
     except Exception as e:
         print(f"Error in analyze_subjective_answers: {str(e)}")
         return None
+
+def display_subjective_test_tab(student_id, course_id, session_id):
+    """Display subjective tests for students"""
+    st.header("Subjective Tests")
+    
+    try:
+        # Query for active tests
+        subjective_tests = list(subjective_tests_collection.find({
+            "course_id": course_id,
+            "session_id": session_id,
+            "status": "active"
+        }))
+
+        if not subjective_tests:
+            st.info("No subjective tests available for this session.")
+            return
+
+        for test in subjective_tests:
+            with st.expander(f"📝 {test['title']}", expanded=True):
+                # Check for existing submission
+                existing_submission = next(
+                    (sub for sub in test.get('submissions', []) 
+                     if sub['student_id'] == str(student_id)), 
+                    None
+                )
+                
+                if existing_submission:
+                    st.success("Test completed! Your answers have been submitted.")
+                    st.subheader("Your Answers")
+                    for i, ans in enumerate(existing_submission['answers']):
+                        st.markdown(f"**Question {i+1}:** {test['questions'][i]['question']}")
+                        st.markdown(f"**Your Answer:** {ans}")
+                        st.markdown("---")
+                    
+                    # Display analysis
+                    display_subjective_analysis(test['_id'], str(student_id), test.get('context', ''))
+                else:
+                    st.write("Please write your answers:")
+                    with st.form(key=f"subjective_test_form_{test['_id']}"):
+                        student_answers = []
+                        for i, question in enumerate(test['questions']):
+                            st.markdown(f"**Question {i+1}:** {question['question']}")
+                            answer = st.text_area(
+                                "Your answer:",
+                                key=f"q_{test['_id']}_{i}",
+                                height=200
+                            )
+                            student_answers.append(answer)
+
+                        if st.form_submit_button("Submit Test"):
+                            if all(answer.strip() for answer in student_answers):
+                                success = submit_subjective_test(
+                                    test['_id'],
+                                    str(student_id),
+                                    student_answers
+                                )
+                                if success:
+                                    st.success("Test submitted successfully!")
+                                    st.rerun()
+                                else:
+                                    st.error("Error submitting test. Please try again.")
+                            else:
+                                st.error("Please answer all questions before submitting.")
+    except Exception as e:
+        print(f"Error in display_subjective_test_tab: {str(e)}", flush=True)
+        st.error("An error occurred while loading the tests. Please try again later.")
     
 def display_subjective_analysis(test_id, student_id, context):
     """Display subjective test analysis to students and faculty"""
@@ -2454,17 +2426,13 @@ def display_subjective_analysis(test_id, student_id, context):
         # Display analysis results
         st.subheader("Answer Analysis")
         
-        # Similarity score
-        similarity = analysis.get('similarity_score', 0) * 100
-        st.metric("Content Relevance Score", f"{similarity:.1f}%")
-        
         # Content analysis
-        st.markdown("### Content Analysis")
+        st.markdown("### Evidence-Based Feedback")
         st.markdown(analysis.get('content_analysis', 'No analysis available'))
         
         # Improvement suggestions
-        st.markdown("### Suggested Improvements")
-        st.markdown(analysis.get('suggested_improvements', 'No suggestions available'))
+        # st.markdown("### Suggested Improvements")
+        # st.markdown(analysis.get('suggested_improvements', 'No suggestions available'))
         
         # Analysis timestamp
         analyzed_at = analysis.get('analyzed_at')
