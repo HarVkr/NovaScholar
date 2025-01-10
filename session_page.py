@@ -707,184 +707,184 @@ def display_post_class_content(session, student_id, course_id):
         else:
             st.warning("No assignments found for this session.")            
                 
-def display_preclass_analytics(session, course_id):
-    """Display pre-class analytics for faculty based on chat interaction metrics"""
-    st.subheader("Pre-class Analytics")
+# def display_preclass_analytics(session, course_id):
+#     """Display pre-class analytics for faculty based on chat interaction metrics"""
+#     st.subheader("Pre-class Analytics")
     
-    # Get all enrolled students
-    # enrolled_students = list(students_collection.find({"enrolled_courses": session['course_id']}))
-    enrolled_students = list(students_collection.find({
-        "enrolled_courses.course_id": course_id
-    }))
-    # total_students = len(enrolled_students)
+#     # Get all enrolled students
+#     # enrolled_students = list(students_collection.find({"enrolled_courses": session['course_id']}))
+#     enrolled_students = list(students_collection.find({
+#         "enrolled_courses.course_id": course_id
+#     }))
+#     # total_students = len(enrolled_students)
     
-    total_students = students_collection.count_documents({
-        "enrolled_courses": {
-            "$elemMatch": {"course_id": course_id}
-        }
-    })
+#     total_students = students_collection.count_documents({
+#         "enrolled_courses": {
+#             "$elemMatch": {"course_id": course_id}
+#         }
+#     })
 
 
-    if total_students == 0:
-        st.warning("No students enrolled in this course.")
-        return
+#     if total_students == 0:
+#         st.warning("No students enrolled in this course.")
+#         return
     
-    # Get chat history for all students in this session
-    chat_data = list(chat_history_collection.find({
-        "session_id": session['session_id']
-    }))
+#     # Get chat history for all students in this session
+#     chat_data = list(chat_history_collection.find({
+#         "session_id": session['session_id']
+#     }))
     
-    # Create a DataFrame to store student completion data
-    completion_data = []
-    incomplete_students = []
+#     # Create a DataFrame to store student completion data
+#     completion_data = []
+#     incomplete_students = []
     
-    for student in enrolled_students:
-        student_id = student['_id']
-        student_name = student.get('full_name', 'Unknown')
-        student_sid = student.get('SID', 'Unknown')
+#     for student in enrolled_students:
+#         student_id = student['_id']
+#         student_name = student.get('full_name', 'Unknown')
+#         student_sid = student.get('SID', 'Unknown')
         
-        # Find student's chat history
-        student_chat = next((chat for chat in chat_data if chat['user_id'] == student_id), None)
+#         # Find student's chat history
+#         student_chat = next((chat for chat in chat_data if chat['user_id'] == student_id), None)
         
-        if student_chat:
-            messages = student_chat.get('messages', [])
-            message_count = len(messages)
-            status = "Completed" if message_count >= 20 else "Incomplete"
+#         if student_chat:
+#             messages = student_chat.get('messages', [])
+#             message_count = len(messages)
+#             status = "Completed" if message_count >= 20 else "Incomplete"
 
-            # Format chat history for display
-            chat_history = []
-            for msg in messages:
-                timestamp_str = msg.get('timestamp', '')
-                if isinstance(timestamp_str, str):
-                    timestamp = datetime.fromisoformat(timestamp_str)
-                else:
-                    timestamp = timestamp_str
-                # timestamp = msg.get('timestamp', '').strftime("%Y-%m-%d %H:%M:%S")
-                chat_history.append({
-                    # 'timestamp': timestamp,
-                    'timestamp': timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                    'prompt': msg.get('prompt'),
-                    'response': msg.get('response')
-                })
+#             # Format chat history for display
+#             chat_history = []
+#             for msg in messages:
+#                 timestamp_str = msg.get('timestamp', '')
+#                 if isinstance(timestamp_str, str):
+#                     timestamp = datetime.fromisoformat(timestamp_str)
+#                 else:
+#                     timestamp = timestamp_str
+#                 # timestamp = msg.get('timestamp', '').strftime("%Y-%m-%d %H:%M:%S")
+#                 chat_history.append({
+#                     # 'timestamp': timestamp,
+#                     'timestamp': timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+#                     'prompt': msg.get('prompt'),
+#                     'response': msg.get('response')
+#                 })
             
-            message_count = len(student_chat.get('messages', []))
-            status = "Completed" if message_count >= 20 else "Incomplete"
-            if status == "Incomplete":
-                incomplete_students.append({
-                    'name': student_name,
-                    'sid': student_sid,
-                    'message_count': message_count
-                })
-        else:
-            message_count = 0
-            status = "Not Started"
-            chat_history = []
-            incomplete_students.append({
-                'name': student_name,
-                'sid': student_sid,
-                'message_count': 0
-            })
+#             message_count = len(student_chat.get('messages', []))
+#             status = "Completed" if message_count >= 20 else "Incomplete"
+#             if status == "Incomplete":
+#                 incomplete_students.append({
+#                     'name': student_name,
+#                     'sid': student_sid,
+#                     'message_count': message_count
+#                 })
+#         else:
+#             message_count = 0
+#             status = "Not Started"
+#             chat_history = []
+#             incomplete_students.append({
+#                 'name': student_name,
+#                 'sid': student_sid,
+#                 'message_count': 0
+#             })
             
-        completion_data.append({
-            'Student Name': student_name,
-            'SID': student_sid,
-            'Messages': message_count,
-            'Status': status,
-            'Chat History': chat_history
-        })
+#         completion_data.append({
+#             'Student Name': student_name,
+#             'SID': student_sid,
+#             'Messages': message_count,
+#             'Status': status,
+#             'Chat History': chat_history
+#         })
     
-    # Create DataFrame
-    df = pd.DataFrame(completion_data)
+#     # Create DataFrame
+#     df = pd.DataFrame(completion_data)
     
-    # Display summary metrics
-    col1, col2, col3 = st.columns(3)
+#     # Display summary metrics
+#     col1, col2, col3 = st.columns(3)
     
-    completed_count = len(df[df['Status'] == 'Completed'])
-    incomplete_count = len(df[df['Status'] == 'Incomplete'])
-    not_started_count = len(df[df['Status'] == 'Not Started'])
+#     completed_count = len(df[df['Status'] == 'Completed'])
+#     incomplete_count = len(df[df['Status'] == 'Incomplete'])
+#     not_started_count = len(df[df['Status'] == 'Not Started'])
     
-    with col1:
-        st.metric("Completed", completed_count)
-    with col2:
-        st.metric("Incomplete", incomplete_count)
-    with col3:
-        st.metric("Not Started", not_started_count)
+#     with col1:
+#         st.metric("Completed", completed_count)
+#     with col2:
+#         st.metric("Incomplete", incomplete_count)
+#     with col3:
+#         st.metric("Not Started", not_started_count)
     
-    # Display completion rate progress bar
-    completion_rate = (completed_count / total_students) * 100
-    st.markdown("### Overall Completion Rate")
-    st.progress(completion_rate / 100)
-    st.markdown(f"**{completion_rate:.1f}%** of students have completed pre-class materials")
+#     # Display completion rate progress bar
+#     completion_rate = (completed_count / total_students) * 100
+#     st.markdown("### Overall Completion Rate")
+#     st.progress(completion_rate / 100)
+#     st.markdown(f"**{completion_rate:.1f}%** of students have completed pre-class materials")
 
-    # Create tabs for different views
-    tab1, tab2 = st.tabs(["Student Overview", "Detailed Chat History"])
+#     # Create tabs for different views
+#     tab1, tab2 = st.tabs(["Student Overview", "Detailed Chat History"])
     
-    with tab1:
-        # Display completion summary table
-        st.markdown("### Student Completion Details")
-        summary_df = df[['Student Name', 'SID', 'Messages', 'Status']].copy()
-        st.dataframe(
-            summary_df.style.apply(lambda x: ['background-color: #90EE90' if v == 'Completed' 
-                                            else 'background-color: #FFB6C1' if v == 'Incomplete'
-                                            else 'background-color: #FFE4B5' 
-                                            for v in x],
-                                 subset=['Status'])
-        )
+#     with tab1:
+#         # Display completion summary table
+#         st.markdown("### Student Completion Details")
+#         summary_df = df[['Student Name', 'SID', 'Messages', 'Status']].copy()
+#         st.dataframe(
+#             summary_df.style.apply(lambda x: ['background-color: #90EE90' if v == 'Completed' 
+#                                             else 'background-color: #FFB6C1' if v == 'Incomplete'
+#                                             else 'background-color: #FFE4B5' 
+#                                             for v in x],
+#                                  subset=['Status'])
+#         )
         
-    with tab2:
-        # Display detailed chat history
-        st.markdown("### Student Chat Histories")
+#     with tab2:
+#         # Display detailed chat history
+#         st.markdown("### Student Chat Histories")
         
-        # Add student selector
-        selected_student = st.selectbox(
-            "Select a student to view chat history:",
-            options=df['Student Name'].tolist()
-        )
+#         # Add student selector
+#         selected_student = st.selectbox(
+#             "Select a student to view chat history:",
+#             options=df['Student Name'].tolist()
+#         )
         
-        # Get selected student's data
-        student_data = df[df['Student Name'] == selected_student].iloc[0]
-        print(student_data)
-        chat_history = student_data['Chat History']
-        # Refresh chat history when a new student is selected
-        if 'selected_student' not in st.session_state or st.session_state.selected_student != selected_student:
-            st.session_state.selected_student = selected_student
-            st.session_state.selected_student_chat_history = chat_history
-        else:
-            chat_history = st.session_state.selected_student_chat_history
-        # Display student info and chat statistics
-        st.markdown(f"**Student ID:** {student_data['SID']}")
-        st.markdown(f"**Status:** {student_data['Status']}")
-        st.markdown(f"**Total Messages:** {student_data['Messages']}")
+#         # Get selected student's data
+#         student_data = df[df['Student Name'] == selected_student].iloc[0]
+#         print(student_data)
+#         chat_history = student_data['Chat History']
+#         # Refresh chat history when a new student is selected
+#         if 'selected_student' not in st.session_state or st.session_state.selected_student != selected_student:
+#             st.session_state.selected_student = selected_student
+#             st.session_state.selected_student_chat_history = chat_history
+#         else:
+#             chat_history = st.session_state.selected_student_chat_history
+#         # Display student info and chat statistics
+#         st.markdown(f"**Student ID:** {student_data['SID']}")
+#         st.markdown(f"**Status:** {student_data['Status']}")
+#         st.markdown(f"**Total Messages:** {student_data['Messages']}")
         
-        # Display chat history in a table
-        if chat_history:
-            chat_df = pd.DataFrame(chat_history)
-            st.dataframe(
-                chat_df.style.apply(lambda x: ['background-color: #E8F0FE' if v == 'response' else 'background-color: #FFFFFF' for v in x], subset=['prompt']), use_container_width=True
-            )
-        else:
-            st.info("No chat history available for this student.")
+#         # Display chat history in a table
+#         if chat_history:
+#             chat_df = pd.DataFrame(chat_history)
+#             st.dataframe(
+#                 chat_df.style.apply(lambda x: ['background-color: #E8F0FE' if v == 'response' else 'background-color: #FFFFFF' for v in x], subset=['prompt']), use_container_width=True
+#             )
+#         else:
+#             st.info("No chat history available for this student.")
     
-    # Display students who haven't completed
-    if incomplete_students:
-        st.markdown("### Students Requiring Follow-up")
-        incomplete_df = pd.DataFrame(incomplete_students)
-        st.markdown(f"**{len(incomplete_students)} students** need to complete the pre-class materials:")
+#     # Display students who haven't completed
+#     if incomplete_students:
+#         st.markdown("### Students Requiring Follow-up")
+#         incomplete_df = pd.DataFrame(incomplete_students)
+#         st.markdown(f"**{len(incomplete_students)} students** need to complete the pre-class materials:")
         
-        # Create a styled table for incomplete students
-        st.table(
-            incomplete_df.style.apply(lambda x: ['background-color: #FFFFFF' 
-                                               for _ in range(len(x))]))
+#         # Create a styled table for incomplete students
+#         st.table(
+#             incomplete_df.style.apply(lambda x: ['background-color: #FFFFFF' 
+#                                                for _ in range(len(x))]))
         
-        # Export option for incomplete students list
-        csv = incomplete_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            "Download Follow-up List",
-            csv,
-            "incomplete_students.csv",
-            "text/csv",
-            key='download-csv'
-        )
+#         # Export option for incomplete students list
+#         csv = incomplete_df.to_csv(index=False).encode('utf-8')
+#         st.download_button(
+#             "Download Follow-up List",
+#             csv,
+#             "incomplete_students.csv",
+#             "text/csv",
+#             key='download-csv'
+#         )
 
 def display_inclass_analytics(session, course_id):
     """Display in-class analytics for faculty"""
