@@ -35,18 +35,18 @@ def cosine_similarity(v1, v2):
     norm_product = norm(v1) * norm(v2)
     return dot_product / norm_product if norm_product != 0 else 0
 
-# analytics.py
-def derive_analytics(goal, reference_text, openai_api_key, context=None):
+def derive_analytics(goal, reference_text, openai_api_key, context=None, synoptic=None):
     """
-    Analyze subjective answers with respect to pre-class materials and provide detailed feedback
+    Analyze subjective answers with respect to pre-class materials and synoptic, and provide detailed feedback
     
     Args:
         goal (str): Analysis objective
         reference_text (str): Student's answer text
         openai_api_key (str): OpenAI API key
         context (str, optional): Pre-class material content for comparison
+        synoptic (str, optional): Synoptic content for evaluation
     """
-    template = f"""Given a student's answer to a subjective question, analyze it following these specific guidelines. Compare it with the provided pre-class materials (if available) to assess correctness and completeness.
+    template = f"""Given a student's answer to a subjective question, analyze it following these specific guidelines. Compare it with the provided pre-class materials and synoptic (if available) to assess correctness and completeness.
 
     1. Analyze the text as an experienced educational assessor, considering:
        - Conceptual understanding
@@ -55,33 +55,20 @@ def derive_analytics(goal, reference_text, openai_api_key, context=None):
        - Use of relevant terminology
        - Application of concepts
 
-    2. Structure the output in markdown with four sections:
+    2. Structure the output in markdown with two sections:
 
     **Correctness Assessment**
     - Rate overall correctness on a scale of 1-10
 
-    **Content Analysis**
-    - Analyze how well the answer addresses the question
-    - Evaluate the use of examples and supporting evidence
-    - Assess the logical flow and structure
-    - Note any unique insights or perspectives
-    - Highlight particularly strong points
-
-    **Areas for Improvement**
-    - Identify specific concepts needing clarification
-    - Point out missing key points from reference materials
-    - Suggest ways to strengthen the argument
-    - Recommend additional examples or evidence needed
-    - Provide specific suggestions for better concept application
-
-    **Key Terms Analysis**
-    - List important terms used correctly
-    - Identify missing key terms from reference materials
-    - Note any terms used incorrectly
-    - Suggest additional relevant terminology
+    **Evidence-Based Feedback**
+    - Provide specific evidence from the student's answer to justify the score reduction
+    - Highlight the exact lines or phrases that need improvement
 
     Pre-class Materials Context:
     {context if context else "No reference materials provided"}
+
+    Synoptic:
+    {synoptic if synoptic else "No synoptic provided"}
 
     Student's Answer:
     {reference_text}
@@ -90,14 +77,21 @@ def derive_analytics(goal, reference_text, openai_api_key, context=None):
     - Base assessment strictly on provided content
     - Be specific in feedback and suggestions
     """
-
+    
+    # Initialize OpenAI client
     client = OpenAI(api_key=openai_api_key)
-    response = client.chat.completions.create(
-        model="gpt-4-0125-preview",
-        messages=[
-            {"role": "user", "content": template}
-        ],
-        max_tokens=1500,
-        temperature=0.2,
-    )
-    return response.choices[0].message.content
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4-0125-preview",
+            messages=[
+                {"role": "system", "content": "You are an educational assessment expert."},
+                {"role": "user", "content": template}
+            ],
+            temperature=0.7
+        )
+        analysis = response.choices[0].message.content
+        return analysis
+    except Exception as e:
+        print(f"Error in generating analysis with OpenAI: {str(e)}")
+        return "Error generating analysis"
