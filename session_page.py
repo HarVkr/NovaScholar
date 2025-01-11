@@ -1,8 +1,10 @@
 from collections import defaultdict
 import json
 import random
+import requests
 import streamlit as st
 from datetime import datetime
+from youtube_transcript_api import YouTubeTranscriptApi
 from utils.helpers import display_progress_bar, create_notification, format_datetime
 from file_upload_vectorize import upload_resource, extract_text_from_file, create_vector_store, resources_collection, model, assignment_submit
 from db import courses_collection2, chat_history_collection, students_collection, faculty_collection, vectors_collection
@@ -27,6 +29,7 @@ import asyncio
 import numpy as np
 import re
 from analytics import derive_analytics, create_embeddings, cosine_similarity
+from bs4 import BeautifulSoup
 
 load_dotenv()
 MONGO_URI = os.getenv('MONGO_URI')
@@ -129,66 +132,153 @@ def get_current_user():
     # user = get_current_user()
     
 def display_preclass_content(session, student_id, course_id):
-    """Display pre-class materials for a session"""
+    # """Display pre-class materials for a session"""
+    # st.subheader("Pre-class Materials")
+    # print("Session ID is: ", session['session_id'])
+    # # Display pre-class materials
+    # materials = resources_collection.find({"session_id": session['session_id']})
+    # for material in materials:
+    #     with st.expander(f"{material['file_name']} ({material['material_type'].upper()})"):
+    #         file_type = material.get('file_type', 'unknown')
+    #         if file_type == 'application/pdf':
+    #             st.markdown(f"📑 [Open PDF Document]({material['file_name']})")
+    #             if st.button("View PDF", key=f"view_pdf_{material['_id']}"):
+    #                 st.text_area("PDF Content", material['text_content'], height=300)
+    #             if st.button("Download PDF", key=f"download_pdf_{material['_id']}"):
+    #                 st.download_button(
+    #                     label="Download PDF",
+    #                     data=material['file_content'],
+    #                     file_name=material['file_name'],
+    #                     mime='application/pdf'
+    #                 )
+    #             if st.button("Mark PDF as Read", key=f"pdf_{material['_id']}"):
+    #                 create_notification("PDF marked as read!", "success")
+    #         elif file_type == 'text/plain':
+    #             st.markdown(f"📄 [Open Text Document]({material['file_name']})")
+    #             if st.button("View Text", key=f"view_text_{material['_id']}"):
+    #                 st.text_area("Text Content", material['text_content'], height=300)
+    #             if st.button("Download Text", key=f"download_text_{material['_id']}"):
+    #                 st.download_button(
+    #                     label="Download Text",
+    #                     data=material['file_content'],
+    #                     file_name=material['file_name'],
+    #                     mime='text/plain'
+    #                 )
+    #             if st.button("Mark Text as Read", key=f"text_{material['_id']}"):
+    #                 create_notification("Text marked as read!", "success")
+    #         elif file_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+    #             st.markdown(f"📄 [Open Word Document]({material['file_name']})")
+    #             if st.button("View Word", key=f"view_word_{material['_id']}"):
+    #                 st.text_area("Word Content", material['text_content'], height=300)
+    #             if st.button("Download Word", key=f"download_word_{material['_id']}"):
+    #                 st.download_button(
+    #                     label="Download Word",
+    #                     data=material['file_content'],
+    #                     file_name=material['file_name'],
+    #                     mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    #                 )
+    #             if st.button("Mark Word as Read", key=f"word_{material['_id']}"):
+    #                 create_notification("Word document marked as read!", "success")
+    #         elif file_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+    #             st.markdown(f"📊 [Open PowerPoint Presentation]({material['file_name']})")
+    #             if st.button("View PowerPoint", key=f"view_pptx_{material['_id']}"):
+    #                 st.text_area("PowerPoint Content", material['text_content'], height=300)
+    #             if st.button("Download PowerPoint", key=f"download_pptx_{material['_id']}"):
+    #                 st.download_button(
+    #                     label="Download PowerPoint",
+    #                     data=material['file_content'],
+    #                     file_name=material['file_name'],
+    #                     mime='application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    #                 )
+    #             if st.button("Mark PowerPoint as Read", key=f"pptx_{material['_id']}"):
+    #                 create_notification("PowerPoint presentation marked as read!", "success")
+    """Display pre-class materials for a session including external resources"""
     st.subheader("Pre-class Materials")
     print("Session ID is: ", session['session_id'])
-    # Display pre-class materials
+    
+    # Display uploaded materials
     materials = resources_collection.find({"session_id": session['session_id']})
+    
     for material in materials:
-        with st.expander(f"{material['file_name']} ({material['material_type'].upper()})"):
-            file_type = material.get('file_type', 'unknown')
-            if file_type == 'application/pdf':
-                st.markdown(f"📑 [Open PDF Document]({material['file_name']})")
-                if st.button("View PDF", key=f"view_pdf_{material['_id']}"):
-                    st.text_area("PDF Content", material['text_content'], height=300)
-                if st.button("Download PDF", key=f"download_pdf_{material['_id']}"):
-                    st.download_button(
-                        label="Download PDF",
-                        data=material['file_content'],
-                        file_name=material['file_name'],
-                        mime='application/pdf'
-                    )
-                if st.button("Mark PDF as Read", key=f"pdf_{material['_id']}"):
-                    create_notification("PDF marked as read!", "success")
-            elif file_type == 'text/plain':
-                st.markdown(f"📄 [Open Text Document]({material['file_name']})")
-                if st.button("View Text", key=f"view_text_{material['_id']}"):
-                    st.text_area("Text Content", material['text_content'], height=300)
-                if st.button("Download Text", key=f"download_text_{material['_id']}"):
-                    st.download_button(
-                        label="Download Text",
-                        data=material['file_content'],
-                        file_name=material['file_name'],
-                        mime='text/plain'
-                    )
-                if st.button("Mark Text as Read", key=f"text_{material['_id']}"):
-                    create_notification("Text marked as read!", "success")
-            elif file_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-                st.markdown(f"📄 [Open Word Document]({material['file_name']})")
-                if st.button("View Word", key=f"view_word_{material['_id']}"):
-                    st.text_area("Word Content", material['text_content'], height=300)
-                if st.button("Download Word", key=f"download_word_{material['_id']}"):
-                    st.download_button(
-                        label="Download Word",
-                        data=material['file_content'],
-                        file_name=material['file_name'],
-                        mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-                    )
-                if st.button("Mark Word as Read", key=f"word_{material['_id']}"):
-                    create_notification("Word document marked as read!", "success")
-            elif file_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-                st.markdown(f"📊 [Open PowerPoint Presentation]({material['file_name']})")
-                if st.button("View PowerPoint", key=f"view_pptx_{material['_id']}"):
-                    st.text_area("PowerPoint Content", material['text_content'], height=300)
-                if st.button("Download PowerPoint", key=f"download_pptx_{material['_id']}"):
-                    st.download_button(
-                        label="Download PowerPoint",
-                        data=material['file_content'],
-                        file_name=material['file_name'],
-                        mime='application/vnd.openxmlformats-officedocument.presentationml.presentation'
-                    )
-                if st.button("Mark PowerPoint as Read", key=f"pptx_{material['_id']}"):
-                    create_notification("PowerPoint presentation marked as read!", "success")
+        file_type = material.get('file_type', 'unknown')
+        
+        # Handle external resources
+        if file_type == 'external':
+            with st.expander(f"📌 {material['file_name']}"):
+                st.markdown(f"Source: [{material['source_url']}]({material['source_url']})")
+                
+                if material['material_type'].lower() == 'video':
+                    # Embed YouTube video if it's a YouTube URL
+                    if 'youtube.com' in material['source_url'] or 'youtu.be' in material['source_url']:
+                        video_id = extract_youtube_id(material['source_url'])
+                        if video_id:
+                            st.video(f"https://youtube.com/watch?v={video_id}")
+                
+                if st.button("View Content", key=f"view_external_{material['_id']}"):
+                    st.text_area("Extracted Content", material['text_content'], height=300)
+                
+                if st.button("Mark as Read", key=f"external_{material['_id']}"):
+                    create_notification(f"{material['material_type']} content marked as read!", "success")
+        
+        # Handle traditional file types
+        else:
+            with st.expander(f"{material['file_name']} ({material['material_type'].upper()})"):
+                if file_type == 'application/pdf':
+                    st.markdown(f"📑 [Open PDF Document]({material['file_name']})")
+                    if st.button("View PDF", key=f"view_pdf_{material['_id']}"):
+                        st.text_area("PDF Content", material['text_content'], height=300)
+                    if st.button("Download PDF", key=f"download_pdf_{material['_id']}"):
+                        st.download_button(
+                            label="Download PDF",
+                            data=material['file_content'],
+                            file_name=material['file_name'],
+                            mime='application/pdf'
+                        )
+                    if st.button("Mark PDF as Read", key=f"pdf_{material['_id']}"):
+                        create_notification("PDF marked as read!", "success")
+                
+                elif file_type == 'text/plain':
+                    st.markdown(f"📄 [Open Text Document]({material['file_name']})")
+                    if st.button("View Text", key=f"view_text_{material['_id']}"):
+                        st.text_area("Text Content", material['text_content'], height=300)
+                    if st.button("Download Text", key=f"download_text_{material['_id']}"):
+                        st.download_button(
+                            label="Download Text",
+                            data=material['file_content'],
+                            file_name=material['file_name'],
+                            mime='text/plain'
+                        )
+                    if st.button("Mark Text as Read", key=f"text_{material['_id']}"):
+                        create_notification("Text marked as read!", "success")
+                
+                elif file_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+                    st.markdown(f"📄 [Open Word Document]({material['file_name']})")
+                    if st.button("View Word", key=f"view_word_{material['_id']}"):
+                        st.text_area("Word Content", material['text_content'], height=300)
+                    if st.button("Download Word", key=f"download_word_{material['_id']}"):
+                        st.download_button(
+                            label="Download Word",
+                            data=material['file_content'],
+                            file_name=material['file_name'],
+                            mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                        )
+                    if st.button("Mark Word as Read", key=f"word_{material['_id']}"):
+                        create_notification("Word document marked as read!", "success")
+                
+                elif file_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+                    st.markdown(f"📊 [Open PowerPoint Presentation]({material['file_name']})")
+                    if st.button("View PowerPoint", key=f"view_pptx_{material['_id']}"):
+                        st.text_area("PowerPoint Content", material['text_content'], height=300)
+                    if st.button("Download PowerPoint", key=f"download_pptx_{material['_id']}"):
+                        st.download_button(
+                            label="Download PowerPoint",
+                            data=material['file_content'],
+                            file_name=material['file_name'],
+                            mime='application/vnd.openxmlformats-officedocument.presentationml.presentation'
+                        )
+                    if st.button("Mark PowerPoint as Read", key=f"pptx_{material['_id']}"):
+                        create_notification("PowerPoint presentation marked as read!", "success")
+
 
     # Initialize 'messages' in session_state if it doesn't exist
     if 'messages' not in st.session_state:
@@ -338,7 +428,6 @@ def display_preclass_content(session, student_id, course_id):
                         # resource_id = resources_collection.find_one({"file_name": file_name})["_id"]
                         st.success("Material uploaded successfully!")
                         # st.experimental_rerun()
-
     # st.subheader("Your Chat History")
     if st.button("View Chat History"):
         # Initialize chat messages from database
@@ -506,6 +595,21 @@ def display_preclass_content(session, student_id, course_id):
                                 #     st.success(f"Quiz submitted successfully! Your score: {score:.1f}%")
                                 # except Exception as db_error:
                                 #     st.error(f"Error saving submission: {str(db_error)}")
+
+
+def extract_youtube_id(url):
+    """Extract YouTube video ID from URL"""
+    if 'youtube.com' in url:
+        try:
+            return url.split('v=')[1].split('&')[0]
+        except IndexError:
+            return None
+    elif 'youtu.be' in url:
+        try:
+            return url.split('/')[-1]
+        except IndexError:
+            return None
+    return None
 
 
 def display_in_class_content(session, user_type):
@@ -1830,33 +1934,201 @@ def display_session_analytics(session, course_id):
     # Display Post-class Analytics
     display_postclass_analytics(session, course_id)
     
-def upload_preclass_materials(session_id, course_id):
-    """Upload pre-class materials for a session"""
-    st.subheader("Upload Pre-class Materials")
+# def upload_preclass_materials(session_id, course_id):
+#     """Upload pre-class materials for a session"""
+#     st.subheader("Upload Pre-class Materials")
     
-    # File upload section
-    uploaded_file = st.file_uploader("Upload Material", type=['txt', 'pdf', 'docx'])
-    if uploaded_file is not None:
-        with st.spinner("Processing document..."):
-            file_name = uploaded_file.name
-            file_content = extract_text_from_file(uploaded_file)
-            if file_content:
-                material_type = st.selectbox("Select Material Type", ["pdf", "docx", "txt"])
-                if st.button("Upload Material"):
-                    upload_resource(course_id, session_id, file_name, uploaded_file, material_type)
+#     # File upload section
+#     uploaded_file = st.file_uploader("Upload Material", type=['txt', 'pdf', 'docx'])
+#     if uploaded_file is not None:
+#         with st.spinner("Processing document..."):
+#             file_name = uploaded_file.name
+#             file_content = extract_text_from_file(uploaded_file)
+#             if file_content:
+#                 material_type = st.selectbox("Select Material Type", ["pdf", "docx", "txt"])
+#                 if st.button("Upload Material"):
+#                     upload_resource(course_id, session_id, file_name, uploaded_file, material_type)
 
-                    # Search for the newly uploaded resource's _id in resources_collection
-                    resource_id = resources_collection.find_one({"file_name": file_name})["_id"]
-                    create_vector_store(file_content, resource_id)
-                    st.success("Material uploaded successfully!")
+#                     # Search for the newly uploaded resource's _id in resources_collection
+#                     resource_id = resources_collection.find_one({"file_name": file_name})["_id"]
+#                     create_vector_store(file_content, resource_id)
+#                     st.success("Material uploaded successfully!")
                     
-    # Display existing materials
-    materials = resources_collection.find({"course_id": course_id, "session_id": session_id})
-    for material in materials:
-        st.markdown(f"""
-        * **{material['file_name']}** ({material['material_type']})  
-            Uploaded on: {material['uploaded_at'].strftime('%Y-%m-%d %H:%M')}
-        """)
+#     # Display existing materials
+#     materials = resources_collection.find({"course_id": course_id, "session_id": session_id})
+#     for material in materials:
+#         st.markdown(f"""
+#         * **{material['file_name']}** ({material['material_type']})  
+#             Uploaded on: {material['uploaded_at'].strftime('%Y-%m-%d %H:%M')}
+#         """)
+
+def upload_preclass_materials(session_id, course_id):
+    """Upload pre-class materials and manage external resources for a session"""
+    st.subheader("Pre-class Materials Management")
+    
+    # Create tabs for different functionalities
+    upload_tab, external_tab = st.tabs(["Upload Materials", "External Resources"])
+    
+    with upload_tab:
+        # Original file upload functionality
+        uploaded_file = st.file_uploader("Upload Material", type=['txt', 'pdf', 'docx'])
+        if uploaded_file is not None:
+            with st.spinner("Processing document..."):
+                file_name = uploaded_file.name
+                file_content = extract_text_from_file(uploaded_file)
+                if file_content:
+                    material_type = st.selectbox("Select Material Type", ["pdf", "docx", "txt"])
+                    if st.button("Upload Material"):
+                        upload_resource(course_id, session_id, file_name, uploaded_file, material_type)
+                        st.success("Material uploaded successfully!")
+    
+    with external_tab:
+        # Fetch and display external resources
+        session_data = courses_collection.find_one(
+            {"course_id": course_id, "sessions.session_id": session_id},
+            {"sessions.$": 1}
+        )
+        
+        if session_data and session_data.get('sessions'):
+            session = session_data['sessions'][0]
+            external = session.get('external_resources', {})
+            
+            # Display web articles
+            if 'readings' in external:
+                st.subheader("Web Articles and Videos")
+                for reading in external['readings']:
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown(f"**{reading['title']}**")
+                        st.markdown(f"Type: {reading['type']} | Est. time: {reading['estimated_read_time']}")
+                        st.markdown(f"URL: [{reading['url']}]({reading['url']})")
+                    with col2:
+                        if st.button("Extract Content", key=f"extract_{reading['url']}"):
+                            with st.spinner("Extracting content..."):
+                                content = extract_external_content(reading['url'], reading['type'])
+                                if content:
+                                    resource_id = upload_external_resource(
+                                        course_id,
+                                        session_id,
+                                        reading['title'],
+                                        content,
+                                        reading['type'].lower(),
+                                        reading['url']
+                                    )
+                                    st.success("Content extracted and stored successfully!")
+            
+            # Display books
+            if 'books' in external:
+                st.subheader("Recommended Books")
+                for book in external['books']:
+                    st.markdown(f"""
+                    **{book['title']}** by {book['author']}
+                    - ISBN: {book['isbn']}
+                    - Chapters: {book['chapters']}
+                    """)
+            
+            # Display additional resources
+            if 'additional_resources' in external:
+                st.subheader("Additional Resources")
+                for resource in external['additional_resources']:
+                    st.markdown(f"""
+                    **{resource['title']}** ({resource['type']})
+                    - {resource['description']}
+                    - URL: [{resource['url']}]({resource['url']})
+                    """)
+
+def extract_external_content(url, content_type):
+    """Extract content from external resources based on their type"""
+    try:
+        if content_type.lower() == 'video' and 'youtube.com' in url:
+            return extract_youtube_transcript(url)
+        else:
+            return extract_web_article(url)
+    except Exception as e:
+        st.error(f"Error extracting content: {str(e)}")
+        return None
+
+def extract_youtube_transcript(url):
+    """Extract transcript from YouTube videos"""
+    try:
+        # Extract video ID from URL
+        video_id = url.split('v=')[1].split('&')[0]
+        
+        # Get transcript
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        # Combine transcript text
+        full_text = ' '.join([entry['text'] for entry in transcript])
+        return full_text
+    except Exception as e:
+        st.error(f"Could not extract YouTube transcript: {str(e)}")
+        return None
+
+def extract_web_article(url):
+    """Extract text content from web articles"""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Remove unwanted tags
+        for tag in soup(['script', 'style', 'nav', 'footer', 'header']):
+            tag.decompose()
+        
+        # Extract text from paragraphs
+        paragraphs = soup.find_all('p')
+        text_content = ' '.join([p.get_text().strip() for p in paragraphs])
+        
+        return text_content
+    except Exception as e:
+        st.error(f"Could not extract web article content: {str(e)}")
+        return None
+
+def upload_external_resource(course_id, session_id, title, content, content_type, source_url):
+    """Upload extracted external resource content to the database"""
+    resource_data = {
+        "_id": ObjectId(),
+        "course_id": course_id,
+        "session_id": session_id,
+        "file_name": f"{title} ({content_type})",
+        "file_type": "external",
+        "text_content": content,
+        "material_type": content_type,
+        "source_url": source_url,
+        "uploaded_at": datetime.utcnow()
+    }
+    
+    # Check if resource already exists
+    existing_resource = resources_collection.find_one({
+        "session_id": session_id,
+        "source_url": source_url
+    })
+    
+    if existing_resource:
+        return existing_resource["_id"]
+    
+    # Insert new resource
+    resources_collection.insert_one(resource_data)
+    resource_id = resource_data["_id"]
+    
+    # Update course document
+    courses_collection.update_one(
+        {
+            "course_id": course_id,
+            "sessions.session_id": session_id
+        },
+        {
+            "$push": {"sessions.$.pre_class.resources": resource_id}
+        }
+    )
+    
+    if content:
+        create_vector_store(content, resource_id)
+    
+    return resource_id
 
 def display_quiz_tab(student_id, course_id, session_id):
     """Display quizzes for students"""
