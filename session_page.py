@@ -1309,45 +1309,46 @@ def convert_json_to_dict(json_str):
 #     topics = json.load(file)
 
 def get_preclass_analytics(session):
-    """Get all user_ids from chat_history collection where session_id matches"""
-    user_ids = chat_history_collection.distinct("user_id", {"session_id": session['session_id']})
-    print(user_ids)
-    session_id = session['session_id']
+    # Earlier Code:
+    # """Get all user_ids from chat_history collection where session_id matches"""
+    # user_ids = chat_history_collection.distinct("user_id", {"session_id": session['session_id']})
+    # print(user_ids)
+    # session_id = session['session_id']
 
-    all_chat_histories = []
+    # all_chat_histories = []
 
-    for user_id in user_ids:
-        result = get_chat_history(user_id, session_id)
-        if result:
-            for record in result:
-                chat_history = {
-                    "user_id": record["user_id"],
-                    "session_id": record["session_id"],
-                    "messages": record["messages"]
-                }
-                all_chat_histories.append(chat_history)
-        else:
-            st.warning("No chat history found for this session.")
+    # for user_id in user_ids:
+    #     result = get_chat_history(user_id, session_id)
+    #     if result:
+    #         for record in result:
+    #             chat_history = {
+    #                 "user_id": record["user_id"],
+    #                 "session_id": record["session_id"],
+    #                 "messages": record["messages"]
+    #             }
+    #             all_chat_histories.append(chat_history)
+    #     else:
+    #         st.warning("No chat history found for this session.")
     
 
-    # Pass the pre-class materials content to the analytics engine
-    topics = extract_topics_from_materials(session)
-    # dict_topics = convert_json_to_dict(topics)
-    print(topics)
+    # # Pass the pre-class materials content to the analytics engine
+    # topics = extract_topics_from_materials(session)
+    # # dict_topics = convert_json_to_dict(topics)
+    # print(topics)
     
-    # # Use the 1st analytics engine
-    # analytics_engine = NovaScholarAnalytics(all_topics_list=topics)
-    # # extracted_topics = analytics_engine._extract_topics(None, topics)
-    # # print(extracted_topics)
+    # # # Use the 1st analytics engine
+    # # analytics_engine = NovaScholarAnalytics(all_topics_list=topics)
+    # # # extracted_topics = analytics_engine._extract_topics(None, topics)
+    # # # print(extracted_topics)
 
-    # results = analytics_engine.process_chat_history(all_chat_histories)
-    # faculty_report = analytics_engine.generate_faculty_report(results)
-    # print(faculty_report)
-    # # Pass this Faculty Report to an LLM model for refinements and clarity
-    # refined_report = get_response_from_llm(faculty_report)
-    # return refined_report
+    # # results = analytics_engine.process_chat_history(all_chat_histories)
+    # # faculty_report = analytics_engine.generate_faculty_report(results)
+    # # print(faculty_report)
+    # # # Pass this Faculty Report to an LLM model for refinements and clarity
+    # # refined_report = get_response_from_llm(faculty_report)
+    # # return refined_report
 
-    # Use the 2nd analytice engine (using LLM): 
+    # # Use the 2nd analytice engine (using LLM): 
     fallback_analytics = {
         "topic_insights": [],
             "student_insights": [],
@@ -1374,16 +1375,64 @@ def get_preclass_analytics(session):
                 "monitoring_required": []
             }
     }
+    # analytics_generator = NovaScholarAnalytics()
+    # analytics2 = analytics_generator.generate_analytics(all_chat_histories, topics)
+    # # enriched_analytics = analytics_generator._enrich_analytics(analytics2)
+    # print("Analytics is: ", analytics2)
+    
+    # if analytics2 == fallback_analytics:
+    #     return None
+    # else:
+    #     return analytics2
+    # # print(json.dumps(analytics, indent=2))
+
+
+    # New Code:
+    # Debug print 1: Check session
+    print("Starting get_preclass_analytics with session:", session['session_id'])
+    
+    user_ids = chat_history_collection.distinct("user_id", {"session_id": session['session_id']})
+    # Debug print 2: Check user_ids
+    print("Found user_ids:", user_ids)
+    
+    all_chat_histories = []
+    for user_id in user_ids:
+        result = get_chat_history(user_id, session['session_id'])
+        # Debug print 3: Check each chat history result
+        print(f"Chat history for user {user_id}:", "Found" if result else "Not found")
+        if result:
+            for record in result:
+                chat_history = {
+                    "user_id": record["user_id"],
+                    "session_id": record["session_id"],
+                    "messages": record["messages"]
+                }
+                all_chat_histories.append(chat_history)
+
+    # Debug print 4: Check chat histories
+    print("Total chat histories collected:", len(all_chat_histories))
+
+    # Extract topics with debug print
+    topics = extract_topics_from_materials(session)
+    # Debug print 5: Check topics
+    print("Extracted topics:", topics)
+    
+    if not topics:
+        print("Topics extraction failed")  # Debug print 6
+        return None
+
     analytics_generator = NovaScholarAnalytics()
     analytics2 = analytics_generator.generate_analytics(all_chat_histories, topics)
-    # enriched_analytics = analytics_generator._enrich_analytics(analytics2)
-    print("Analytics is: ", analytics2)
+    # Debug print 7: Check analytics
+    print("Generated analytics:", analytics2)
     
     if analytics2 == fallback_analytics:
+        print("Fallback analytics returned")  # Debug print 8
         return None
     else:
         return analytics2
-    # print(json.dumps(analytics, indent=2))
+
+
 
 
 # Load Analytics from a JSON file
@@ -1392,13 +1441,53 @@ def get_preclass_analytics(session):
 #     analytics = json.load(file)
 
 def display_preclass_analytics2(session, course_id):
+    # Earlier Code:
+    # Initialize or get analytics data from session state
+    # if 'analytics_data' not in st.session_state:
+    #     st.session_state.analytics_data = get_preclass_analytics(session)
+
+    # analytics = st.session_state.analytics_data
+    
+    # print(analytics)
+
+
+    # New Code:
     # Initialize or get analytics data from session state
     if 'analytics_data' not in st.session_state:
-        st.session_state.analytics_data = get_preclass_analytics(session)
+        # Add debug prints
+        analytics_data = get_preclass_analytics(session)
+        if analytics_data is None:
+            st.info("Fetching new analytics data...")
+        if analytics_data is None:
+            st.error("Failed to generate analytics. Please check the following:")
+            st.write("1. Ensure pre-class materials contain text content")
+            st.write("2. Verify chat history exists for this session")
+            st.write("3. Check if topic extraction was successful")
+            return
+        st.session_state.analytics_data = analytics_data
 
     analytics = st.session_state.analytics_data
     
-    print(analytics)
+    # Validate analytics data structure
+    if not isinstance(analytics, dict):
+        st.error(f"Invalid analytics data type: {type(analytics)}")
+        return
+        
+    required_keys = ["topic_wise_insights", "ai_recommended_actions", "student_analytics"]
+    missing_keys = [key for key in required_keys if key not in analytics]
+    if missing_keys:
+        st.error(f"Missing required keys in analytics data: {missing_keys}")
+        return
+
+    # Initialize topic indices only if we have valid data
+    if 'topic_indices' not in st.session_state:
+        try:
+            st.session_state.topic_indices = list(range(len(analytics["topic_wise_insights"])))
+        except Exception as e:
+            st.error(f"Error creating topic indices: {str(e)}")
+            st.write("Analytics data structure:", analytics)
+            return
+
     # Enhanced CSS for better styling and interactivity
     st.markdown("""
         <style>

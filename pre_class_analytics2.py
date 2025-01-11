@@ -578,17 +578,70 @@ class NovaScholarAnalytics:
         # return typing.cast(AnalyticsResponse, analytics)
 
         # Method 2 (possible fix): 
+        # """Main method to generate analytics with better error handling."""
+        # try:
+        #     processed_histories = self._preprocess_chat_histories(chat_histories)
+        #     prompt = self._create_analytics_prompt(processed_histories, all_topics)
+            
+        #     response = self.model.generate_content(
+        #         prompt,
+        #         generation_config=genai.GenerationConfig(
+        #             response_mime_type="application/json",
+        #             temperature=0.15
+        #             # response_schema=AnalyticsResponse
+        #         )
+        #     )
+            
+        #     if not response.text:
+        #         print("Empty response from Gemini")
+        #         return self._fallback_analytics()
+                
+        #     # analytics = self._process_gemini_response(response.text)
+        #     # return typing.cast(AnalyticsResponse, analytics)
+        #     # return response.text;
+        #     analytics = json.loads(response.text)
+        #     return analytics
+        
+        # except Exception as e:
+        #     print(f"Error generating analytics: {str(e)}")
+        #     return self._fallback_analytics()
+
+
+        # Debugging code: 
         """Main method to generate analytics with better error handling."""
         try:
-            processed_histories = self._preprocess_chat_histories(chat_histories)
-            prompt = self._create_analytics_prompt(processed_histories, all_topics)
-            
+            # Debug print for input validation
+            print("Input validation:")
+            print(f"Chat histories: {len(chat_histories)} entries")
+            print(f"Topics: {all_topics}")
+
+            if not chat_histories or not all_topics:
+                print("Missing required input data")
+                return self._fallback_analytics()
+
+            # Debug the preprocessing step
+            try:
+                processed_histories = self._preprocess_chat_histories(chat_histories)
+                print("Successfully preprocessed chat histories")
+            except Exception as preprocess_error:
+                print(f"Error in preprocessing: {str(preprocess_error)}")
+                return self._fallback_analytics()
+
+            # Debug the prompt creation
+            try:
+                prompt = self._create_analytics_prompt(processed_histories, all_topics)
+                print("Successfully created prompt")
+                print("Prompt preview:", prompt[:200] + "...") # Print first 200 chars
+            except Exception as prompt_error:
+                print(f"Error in prompt creation: {str(prompt_error)}")
+                return self._fallback_analytics()
+
+            # Rest of the function remains the same
             response = self.model.generate_content(
                 prompt,
                 generation_config=genai.GenerationConfig(
                     response_mime_type="application/json",
                     temperature=0.15
-                    # response_schema=AnalyticsResponse
                 )
             )
             
@@ -596,34 +649,62 @@ class NovaScholarAnalytics:
                 print("Empty response from Gemini")
                 return self._fallback_analytics()
                 
-            # analytics = self._process_gemini_response(response.text)
-            # return typing.cast(AnalyticsResponse, analytics)
-            # return response.text;
             analytics = json.loads(response.text)
             return analytics
-        
+            
         except Exception as e:
             print(f"Error generating analytics: {str(e)}")
+            print(f"Error type: {type(e)}")
+            import traceback
+            print("Full traceback:", traceback.format_exc())
             return self._fallback_analytics()
 
     def _preprocess_chat_histories(self, chat_histories: List[Dict]) -> List[Dict]:
+        # """Preprocess chat histories to focus on relevant information."""
+        # processed = []
+        
+        # for chat in chat_histories:
+        #     print(str(chat["user_id"]))
+        #     processed_chat = {
+        #         "user_id": str(chat["user_id"]),
+        #         "messages": [
+        #             {
+        #                 "prompt": msg["prompt"],
+        #                 "response": msg["response"]
+        #             }
+        #             for msg in chat["messages"]
+        #         ]
+        #     }
+        #     processed.append(processed_chat)
+            
+        # return processed
+
+        # Code 2: 
         """Preprocess chat histories to focus on relevant information."""
         processed = []
         
         for chat in chat_histories:
-            print(str(chat["user_id"]))
-            processed_chat = {
-                "user_id": str(chat["user_id"]),
-                "messages": [
-                    {
-                        "prompt": msg["prompt"],
-                        "response": msg["response"]
-                    }
-                    for msg in chat["messages"]
-                ]
-            }
-            processed.append(processed_chat)
+            # Convert ObjectId to string if it's an ObjectId
+            user_id = str(chat["user_id"]["$oid"]) if isinstance(chat["user_id"], dict) and "$oid" in chat["user_id"] else str(chat["user_id"])
             
+            try:
+                processed_chat = {
+                    "user_id": user_id,
+                    "messages": [
+                        {
+                            "prompt": msg["prompt"],
+                            "response": msg["response"]
+                        }
+                        for msg in chat["messages"]
+                    ]
+                }
+                processed.append(processed_chat)
+                print(f"Successfully processed chat for user: {user_id}")
+            except Exception as e:
+                print(f"Error processing chat for user: {user_id}")
+                print(f"Error details: {str(e)}")
+                continue
+                
         return processed
 
     def _fallback_analytics(self) -> Dict:
