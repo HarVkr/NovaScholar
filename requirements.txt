@@ -26,3 +26,6 @@ transformers
 textstat
 spacy
 streamlit_option_menu
+beautifulsoup4
+youtube-transcript-api
+requests
