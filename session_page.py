@@ -1822,7 +1822,7 @@ def display_preclass_analytics2(session, course_id):
         st.markdown('</div>', unsafe_allow_html=True)
 
         # AI Recommendations Section
-        st.markdown('<h2 class="section-title">AI-Powered Recommendations</h2>', unsafe_allow_html=True)
+        st.markdown('<h2 class="section-title">GenAI-Powered Recommendations for Faculty</h2>', unsafe_allow_html=True)
         st.markdown('<div class="recommendation-grid">', unsafe_allow_html=True)
         for idx, rec in enumerate(analytics["ai_recommended_actions"]):
             st.markdown(f"""
