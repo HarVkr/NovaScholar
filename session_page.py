@@ -18,7 +18,6 @@ import os
 from pymongo import MongoClient
 from gen_mcqs import generate_mcqs, save_quiz, quizzes_collection, get_student_quiz_score, submit_quiz_answers
 from create_course import courses_collection
-# from pre_class_analytics import NovaScholarAnalytics
 from pre_class_analytics2 import NovaScholarAnalytics
 import openai
 from openai import OpenAI
@@ -30,6 +29,8 @@ import numpy as np
 import re
 from analytics import derive_analytics, create_embeddings, cosine_similarity
 from bs4 import BeautifulSoup
+from rubrics import display_rubrics_tab
+from subjective_test_evaluation import evaluate_subjective_answers, display_evaluation_to_faculty
 
 load_dotenv()
 MONGO_URI = os.getenv('MONGO_URI')
@@ -38,8 +39,11 @@ OPENAI_API_KEY = os.getenv('OPENAI_KEY')
 client = MongoClient(MONGO_URI)
 db = client["novascholar_db"]
 polls_collection = db["polls"]
+subjective_test_evaluation_collection = db["subjective_test_evaluation"]
+assignment_evaluation_collection = db["assignment_evaluation"]
 subjective_tests_collection = db["subjective_tests"]
 synoptic_store_collection = db["synoptic_store"]
+assignments_collection = db["assignments"]
 
 def get_current_user():
     if 'current_user' not in st.session_state:
@@ -132,66 +136,6 @@ def get_current_user():
     # user = get_current_user()
     
 def display_preclass_content(session, student_id, course_id):
-    # """Display pre-class materials for a session"""
-    # st.subheader("Pre-class Materials")
-    # print("Session ID is: ", session['session_id'])
-    # # Display pre-class materials
-    # materials = resources_collection.find({"session_id": session['session_id']})
-    # for material in materials:
-    #     with st.expander(f"{material['file_name']} ({material['material_type'].upper()})"):
-    #         file_type = material.get('file_type', 'unknown')
-    #         if file_type == 'application/pdf':
-    #             st.markdown(f"📑 [Open PDF Document]({material['file_name']})")
-    #             if st.button("View PDF", key=f"view_pdf_{material['_id']}"):
-    #                 st.text_area("PDF Content", material['text_content'], height=300)
-    #             if st.button("Download PDF", key=f"download_pdf_{material['_id']}"):
-    #                 st.download_button(
-    #                     label="Download PDF",
-    #                     data=material['file_content'],
-    #                     file_name=material['file_name'],
-    #                     mime='application/pdf'
-    #                 )
-    #             if st.button("Mark PDF as Read", key=f"pdf_{material['_id']}"):
-    #                 create_notification("PDF marked as read!", "success")
-    #         elif file_type == 'text/plain':
-    #             st.markdown(f"📄 [Open Text Document]({material['file_name']})")
-    #             if st.button("View Text", key=f"view_text_{material['_id']}"):
-    #                 st.text_area("Text Content", material['text_content'], height=300)
-    #             if st.button("Download Text", key=f"download_text_{material['_id']}"):
-    #                 st.download_button(
-    #                     label="Download Text",
-    #                     data=material['file_content'],
-    #                     file_name=material['file_name'],
-    #                     mime='text/plain'
-    #                 )
-    #             if st.button("Mark Text as Read", key=f"text_{material['_id']}"):
-    #                 create_notification("Text marked as read!", "success")
-    #         elif file_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-    #             st.markdown(f"📄 [Open Word Document]({material['file_name']})")
-    #             if st.button("View Word", key=f"view_word_{material['_id']}"):
-    #                 st.text_area("Word Content", material['text_content'], height=300)
-    #             if st.button("Download Word", key=f"download_word_{material['_id']}"):
-    #                 st.download_button(
-    #                     label="Download Word",
-    #                     data=material['file_content'],
-    #                     file_name=material['file_name'],
-    #                     mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    #                 )
-    #             if st.button("Mark Word as Read", key=f"word_{material['_id']}"):
-    #                 create_notification("Word document marked as read!", "success")
-    #         elif file_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-    #             st.markdown(f"📊 [Open PowerPoint Presentation]({material['file_name']})")
-    #             if st.button("View PowerPoint", key=f"view_pptx_{material['_id']}"):
-    #                 st.text_area("PowerPoint Content", material['text_content'], height=300)
-    #             if st.button("Download PowerPoint", key=f"download_pptx_{material['_id']}"):
-    #                 st.download_button(
-    #                     label="Download PowerPoint",
-    #                     data=material['file_content'],
-    #                     file_name=material['file_name'],
-    #                     mime='application/vnd.openxmlformats-officedocument.presentationml.presentation'
-    #                 )
-    #             if st.button("Mark PowerPoint as Read", key=f"pptx_{material['_id']}"):
-    #                 create_notification("PowerPoint presentation marked as read!", "success")
     """Display pre-class materials for a session including external resources"""
     st.subheader("Pre-class Materials")
     print("Session ID is: ", session['session_id'])
@@ -698,8 +642,7 @@ def display_post_class_content(session, student_id, course_id):
                                     course_id,
                                     session['session_id'],
                                     test_title,
-                                    questions,
-                                    synoptic
+                                    questions
                                 )
                                 if test_id:
                                     st.success("Subjective test saved successfully!")
@@ -726,7 +669,6 @@ def display_post_class_content(session, student_id, course_id):
                     session['session_id'],
                     st.session_state.test_title,
                     st.session_state.generated_questions,
-                    st.session_state.generated_synoptic
                 )
                 if test_id:
                     st.success("Subjective test saved successfully!")
@@ -788,267 +730,136 @@ def display_post_class_content(session, student_id, course_id):
                     else:
                         st.error("Error saving quiz.")
 
-        st.subheader("Add Assignments")
-        # Add assignment form
+        st.subheader("Add Assignment")
         with st.form("add_assignment_form"):
             title = st.text_input("Assignment Title")
+            description = st.text_area("Assignment Description")
             due_date = st.date_input("Due Date")
             submit = st.form_submit_button("Add Assignment")
             
             if submit:
+                if not title or not description:
+                    st.error("Please fill in all required fields.")
+                    return
+                    
                 due_date = datetime.combine(due_date, datetime.min.time())
-                # Save the assignment to the database
                 assignment = {
-                    "id": ObjectId(),
+                    "_id": ObjectId(),
                     "title": title,
+                    "description": description,
                     "due_date": due_date,
-                    "status": "pending",
+                    "course_id": course_id,
+                    "session_id": session['session_id'],
+                    "faculty_id": faculty_id,
+                    "created_at": datetime.utcnow(),
+                    "status": "active",
                     "submissions": []
                 }
-                courses_collection2.update_one(
-                    {"course_id": course_id, "sessions.session_id": session['session_id']},
-                    {"$push": {"sessions.$.post_class.assignments": assignment}}
-                )
+                
+                assignments_collection.insert_one(assignment)
                 st.success("Assignment added successfully!")
-    else:
-        # Display assignments
-        session_data = courses_collection2.find_one(
-            {"course_id": course_id, "sessions.session_id": session['session_id']},
-            {"sessions.$": 1}
-        )
+                
+        st.subheader("Existing Assignments")
+        assignments = assignments_collection.find({
+            "session_id": session['session_id'],
+            "course_id": course_id
+        })
         
-        if session_data and "sessions" in session_data and len(session_data["sessions"]) > 0:
-            assignments = session_data["sessions"][0].get("post_class", {}).get("assignments", [])
-            for assignment in assignments:
-                title = assignment.get("title", "No Title")
-                due_date = assignment.get("due_date", "No Due Date")
-                status = assignment.get("status", "No Status")
-                assignment_id = assignment.get("id", "No ID")
-
-                with st.expander(f"Assignment: {title}", expanded=True):
-                    st.markdown(f"**Due Date:** {due_date}")
-                    st.markdown(f"**Status:** {status.replace('_', ' ').title()}")
+        for assignment in assignments:
+            with st.expander(f"📝 {assignment['title']}", expanded=True):
+                st.markdown(f"**Due Date:** {assignment['due_date'].strftime('%Y-%m-%d')}")
+                st.markdown(f"**Description:** {assignment['description']}")
+                
+                total_submissions = len(assignment.get('submissions', []))
+                total_students = students_collection.count_documents({
+                    "enrolled_courses": {
+                        "$elemMatch": {"course_id": course_id}
+                    }
+                })
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Submissions", total_submissions)
+                with col2:
+                    submission_rate = (total_submissions / total_students * 100) if total_students > 0 else 0
+                    st.metric("Submission Rate", f"{submission_rate:.1f}%")
+                with col3:
+                    st.metric("Pending Submissions", total_students - total_submissions)
+                
+                # Display evaluation button and status
+                evaluation_status = st.empty()
+                eval_button = st.button("View/Generate Evaluations", key=f"eval_{assignment['_id']}")
+                
+                if eval_button:
+                    st.session_state.show_evaluations = True
+                    st.session_state.current_assignment = assignment['_id']
                     
-                    # Assignment details
-                    st.markdown("### Instructions")
-                    st.markdown("Complete the assignment according to the provided guidelines.")
+                    # Show evaluation interface in a new container instead of an expander
+                    evaluation_container = st.container()
+                    with evaluation_container:
+                        from assignment_evaluation import display_evaluation_to_faculty
+                        display_evaluation_to_faculty(session['session_id'], student_id, course_id)
                     
-                    # File submission
-                    st.markdown("### Submission")
+    else:  # Student view
+        assignments = assignments_collection.find({
+            "session_id": session['session_id'],
+            "course_id": course_id,
+            "status": "active"
+        })
+        
+        for assignment in assignments:
+            with st.expander(f"📝 {assignment['title']}", expanded=True):
+                st.markdown(f"**Due Date:** {assignment['due_date'].strftime('%Y-%m-%d')}")
+                st.markdown(f"**Description:** {assignment['description']}")
+                
+                existing_submission = next(
+                    (sub for sub in assignment.get('submissions', []) 
+                     if sub['student_id'] == str(student_id)),
+                    None
+                )
+                
+                if existing_submission:
+                    st.success("Assignment submitted!")
+                    st.markdown(f"**Submitted on:** {existing_submission['submitted_at'].strftime('%Y-%m-%d %H:%M')}")
+                    
+                    # Show evaluation status and feedback in the same container
+                    evaluation = assignment_evaluation_collection.find_one({
+                        "assignment_id": assignment['_id'],
+                        "student_id": str(student_id)
+                    })
+                    
+                    if evaluation:
+                        st.markdown("### Evaluation")
+                        st.markdown(evaluation['evaluation'])
+                    else:
+                        st.info("Evaluation pending. Check back later.")
+                else:
                     uploaded_file = st.file_uploader(
                         "Upload your work",
-                        type=['pdf', 'py', 'ipynb'],
-                        key=f"upload_{assignment['id']}"
+                        type=['pdf', 'doc', 'docx', 'txt', 'py', 'ipynb', 'ppt', 'pptx'],
+                        key=f"upload_{assignment['_id']}"
                     )
                     
                     if uploaded_file is not None:
-                        st.success("File uploaded successfully!")
-
-                        if st.button("Submit Assignment", key=f"submit_{assignment['id']}"):
-                            # Extract text content from the file
+                        if st.button("Submit Assignment", key=f"submit_{assignment['_id']}"):
                             text_content = extract_text_from_file(uploaded_file)
                             
-                            # Call assignment_submit function
-                            success = assignment_submit(
-                                student_id=student_id,
-                                course_id=course_id,
-                                session_id=session['session_id'],
-                                assignment_id=assignment['id'],
-                                file_name=uploaded_file.name,
-                                file_content=uploaded_file,
-                                text_content=text_content,
-                                material_type="assignment"
+                            submission = {
+                                "student_id": str(student_id),
+                                "file_name": uploaded_file.name,
+                                "file_type": uploaded_file.type,
+                                "file_content": uploaded_file.getvalue(),
+                                "text_content": text_content,
+                                "submitted_at": datetime.utcnow()
+                            }
+                            
+                            assignments_collection.update_one(
+                                {"_id": assignment['_id']},
+                                {"$push": {"submissions": submission}}
                             )
                             
-                            if success:
-                                st.success("Assignment submitted successfully!")
-                            else:
-                                st.error("Error saving submission.")
-                    # Feedback section (if assignment is completed)
-                    if assignment['status'] == 'completed':
-                        st.markdown("### Feedback")
-                        st.info("Feedback will be provided here once the assignment is graded.")
-        else:
-            st.warning("No assignments found for this session.")            
-                
-# def display_preclass_analytics(session, course_id):
-#     """Display pre-class analytics for faculty based on chat interaction metrics"""
-#     st.subheader("Pre-class Analytics")
-    
-#     # Get all enrolled students
-#     # enrolled_students = list(students_collection.find({"enrolled_courses": session['course_id']}))
-#     enrolled_students = list(students_collection.find({
-#         "enrolled_courses.course_id": course_id
-#     }))
-#     # total_students = len(enrolled_students)
-    
-#     total_students = students_collection.count_documents({
-#         "enrolled_courses": {
-#             "$elemMatch": {"course_id": course_id}
-#         }
-#     })
-
-
-#     if total_students == 0:
-#         st.warning("No students enrolled in this course.")
-#         return
-    
-#     # Get chat history for all students in this session
-#     chat_data = list(chat_history_collection.find({
-#         "session_id": session['session_id']
-#     }))
-    
-#     # Create a DataFrame to store student completion data
-#     completion_data = []
-#     incomplete_students = []
-    
-#     for student in enrolled_students:
-#         student_id = student['_id']
-#         student_name = student.get('full_name', 'Unknown')
-#         student_sid = student.get('SID', 'Unknown')
-        
-#         # Find student's chat history
-#         student_chat = next((chat for chat in chat_data if chat['user_id'] == student_id), None)
-        
-#         if student_chat:
-#             messages = student_chat.get('messages', [])
-#             message_count = len(messages)
-#             status = "Completed" if message_count >= 20 else "Incomplete"
-
-#             # Format chat history for display
-#             chat_history = []
-#             for msg in messages:
-#                 timestamp_str = msg.get('timestamp', '')
-#                 if isinstance(timestamp_str, str):
-#                     timestamp = datetime.fromisoformat(timestamp_str)
-#                 else:
-#                     timestamp = timestamp_str
-#                 # timestamp = msg.get('timestamp', '').strftime("%Y-%m-%d %H:%M:%S")
-#                 chat_history.append({
-#                     # 'timestamp': timestamp,
-#                     'timestamp': timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-#                     'prompt': msg.get('prompt'),
-#                     'response': msg.get('response')
-#                 })
-            
-#             message_count = len(student_chat.get('messages', []))
-#             status = "Completed" if message_count >= 20 else "Incomplete"
-#             if status == "Incomplete":
-#                 incomplete_students.append({
-#                     'name': student_name,
-#                     'sid': student_sid,
-#                     'message_count': message_count
-#                 })
-#         else:
-#             message_count = 0
-#             status = "Not Started"
-#             chat_history = []
-#             incomplete_students.append({
-#                 'name': student_name,
-#                 'sid': student_sid,
-#                 'message_count': 0
-#             })
-            
-#         completion_data.append({
-#             'Student Name': student_name,
-#             'SID': student_sid,
-#             'Messages': message_count,
-#             'Status': status,
-#             'Chat History': chat_history
-#         })
-    
-#     # Create DataFrame
-#     df = pd.DataFrame(completion_data)
-    
-#     # Display summary metrics
-#     col1, col2, col3 = st.columns(3)
-    
-#     completed_count = len(df[df['Status'] == 'Completed'])
-#     incomplete_count = len(df[df['Status'] == 'Incomplete'])
-#     not_started_count = len(df[df['Status'] == 'Not Started'])
-    
-#     with col1:
-#         st.metric("Completed", completed_count)
-#     with col2:
-#         st.metric("Incomplete", incomplete_count)
-#     with col3:
-#         st.metric("Not Started", not_started_count)
-    
-#     # Display completion rate progress bar
-#     completion_rate = (completed_count / total_students) * 100
-#     st.markdown("### Overall Completion Rate")
-#     st.progress(completion_rate / 100)
-#     st.markdown(f"**{completion_rate:.1f}%** of students have completed pre-class materials")
-
-#     # Create tabs for different views
-#     tab1, tab2 = st.tabs(["Student Overview", "Detailed Chat History"])
-    
-#     with tab1:
-#         # Display completion summary table
-#         st.markdown("### Student Completion Details")
-#         summary_df = df[['Student Name', 'SID', 'Messages', 'Status']].copy()
-#         st.dataframe(
-#             summary_df.style.apply(lambda x: ['background-color: #90EE90' if v == 'Completed' 
-#                                             else 'background-color: #FFB6C1' if v == 'Incomplete'
-#                                             else 'background-color: #FFE4B5' 
-#                                             for v in x],
-#                                  subset=['Status'])
-#         )
-        
-#     with tab2:
-#         # Display detailed chat history
-#         st.markdown("### Student Chat Histories")
-        
-#         # Add student selector
-#         selected_student = st.selectbox(
-#             "Select a student to view chat history:",
-#             options=df['Student Name'].tolist()
-#         )
-        
-#         # Get selected student's data
-#         student_data = df[df['Student Name'] == selected_student].iloc[0]
-#         print(student_data)
-#         chat_history = student_data['Chat History']
-#         # Refresh chat history when a new student is selected
-#         if 'selected_student' not in st.session_state or st.session_state.selected_student != selected_student:
-#             st.session_state.selected_student = selected_student
-#             st.session_state.selected_student_chat_history = chat_history
-#         else:
-#             chat_history = st.session_state.selected_student_chat_history
-#         # Display student info and chat statistics
-#         st.markdown(f"**Student ID:** {student_data['SID']}")
-#         st.markdown(f"**Status:** {student_data['Status']}")
-#         st.markdown(f"**Total Messages:** {student_data['Messages']}")
-        
-#         # Display chat history in a table
-#         if chat_history:
-#             chat_df = pd.DataFrame(chat_history)
-#             st.dataframe(
-#                 chat_df.style.apply(lambda x: ['background-color: #E8F0FE' if v == 'response' else 'background-color: #FFFFFF' for v in x], subset=['prompt']), use_container_width=True
-#             )
-#         else:
-#             st.info("No chat history available for this student.")
-    
-#     # Display students who haven't completed
-#     if incomplete_students:
-#         st.markdown("### Students Requiring Follow-up")
-#         incomplete_df = pd.DataFrame(incomplete_students)
-#         st.markdown(f"**{len(incomplete_students)} students** need to complete the pre-class materials:")
-        
-#         # Create a styled table for incomplete students
-#         st.table(
-#             incomplete_df.style.apply(lambda x: ['background-color: #FFFFFF' 
-#                                                for _ in range(len(x))]))
-        
-#         # Export option for incomplete students list
-#         csv = incomplete_df.to_csv(index=False).encode('utf-8')
-#         st.download_button(
-#             "Download Follow-up List",
-#             csv,
-#             "incomplete_students.csv",
-#             "text/csv",
-#             key='download-csv'
-#         )
+                            st.success("Assignment submitted successfully!")
+                            st.rerun()            
 
 def display_inclass_analytics(session, course_id):
     """Display in-class analytics for faculty"""
@@ -1536,9 +1347,6 @@ def get_preclass_analytics(session):
     else:
         return analytics2
 
-
-
-
 # Load Analytics from a JSON file
 # analytics = []
 # with open(r'new_analytics2.json', 'r') as file:
@@ -1822,7 +1630,7 @@ def display_preclass_analytics2(session, course_id):
         st.markdown('</div>', unsafe_allow_html=True)
 
         # AI Recommendations Section
-        st.markdown('<h2 class="section-title">GenAI-Powered Recommendations for Faculty</h2>', unsafe_allow_html=True)
+        st.markdown('<h2 class="section-title">AI-Powered Recommendations</h2>', unsafe_allow_html=True)
         st.markdown('<div class="recommendation-grid">', unsafe_allow_html=True)
         for idx, rec in enumerate(analytics["ai_recommended_actions"]):
             st.markdown(f"""
@@ -2191,75 +1999,11 @@ def display_quiz_tab(student_id, course_id, session_id):
                         else:
                             st.error("Error submitting quiz. Please try again.")
 
-def display_subjective_test_tab(student_id, course_id, session_id):
-    """Display subjective tests for students"""
-    st.header("Subjective Tests")
-    
-    try:
-        subjective_tests = list(subjective_tests_collection.find({
-            "course_id": course_id,
-            "session_id": session_id,
-            "status": "active"
-        }))
-
-        if not subjective_tests:
-            st.info("No subjective tests available for this session.")
-            return
-
-        for test in subjective_tests:
-            with st.expander(f"📝 {test['title']}", expanded=True):
-                # Check for existing submission
-                existing_submission = next(
-                    (sub for sub in test.get('submissions', []) 
-                     if sub['student_id'] == str(student_id)), 
-                    None
-                )
-                
-                if existing_submission:
-                    st.success("Test completed! Your answers have been submitted.")
-                    st.subheader("Your Answers")
-                    for i, ans in enumerate(existing_submission['answers']):
-                        st.markdown(f"**Question {i+1}:** {test['questions'][i]['question']}")
-                        st.markdown(f"**Your Answer:** {ans}")
-                        st.markdown("---")
-                else:
-                    st.write("Please write your answers:")
-                    with st.form(key=f"subjective_test_form_{test['_id']}"):
-                        student_answers = []
-                        for i, question in enumerate(test['questions']):
-                            st.markdown(f"**Question {i+1}:** {question['question']}")
-                            answer = st.text_area(
-                                "Your answer:",
-                                key=f"q_{test['_id']}_{i}",
-                                height=200
-                            )
-                            student_answers.append(answer)
-
-                        if st.form_submit_button("Submit Test"):
-                            if all(answer.strip() for answer in student_answers):
-                                success = submit_subjective_test(
-                                    test['_id'],
-                                    str(student_id),
-                                    student_answers
-                                )
-                                if success:
-                                    st.success("Test submitted successfully!")
-                                    st.rerun()
-                                else:
-                                    st.error("Error submitting test. Please try again.")
-                            else:
-                                st.error("Please answer all questions before submitting.")
-                                
-    except Exception as e:
-        st.error(f"An error occurred while loading the tests. Please try again later.")
-        print(f"Error in display_subjective_test_tab: {str(e)}", flush=True)
-
 def display_session_content(student_id, course_id, session, username, user_type):
     st.title(f"{session['title']}")
 
     # Check if the date is a string or a datetime object
     if isinstance(session['date'], str):
-        # Convert date string to datetime object
         session_date = datetime.fromisoformat(session['date'])
     else:
         session_date = session['date']
@@ -2269,10 +2013,7 @@ def display_session_content(student_id, course_id, session, username, user_type)
     st.markdown(f"**Date:** {format_datetime(session_date)}")
     st.markdown(f"**Course Name:** {course_name}")
 
-    # Find the course_id of the session in 
-
     if user_type == 'student':
-        # Create all tabs at once for students
         tabs = st.tabs([
             "Pre-class Work",
             "In-class Work", 
@@ -2292,18 +2033,14 @@ def display_session_content(student_id, course_id, session, username, user_type)
             with tabs[3]:
                 display_quiz_tab(student_id, course_id, session['session_id'])
             with tabs[4]:
-                display_subjective_test_tab(student_id, course_id, session['session_id'])
+                display_subjective_test_tab(student_id, course_id, session['session_id'])  # Added this line
             with tabs[5]:
-                st.subheader("Group Work")
-                st.info("Group work content will be available soon.")
+                #display_group_work_tab(session, student_id)
+                st.info("End term content will be available soon.")
             with tabs[6]:
                 st.subheader("End Terms")
                 st.info("End term content will be available soon.")
-        else:
-            st.error("Error creating tabs. Please try again.")
-    
     else:  # faculty user
-        # Create all tabs at once for faculty
         tabs = st.tabs([
             "Pre-class Work",
             "In-class Work",
@@ -2311,7 +2048,9 @@ def display_session_content(student_id, course_id, session, username, user_type)
             "Pre-class Analytics",
             "In-class Analytics",
             "Post-class Analytics",
-            "End Terms"
+            "Rubrics",
+            "End Terms",
+            "Evaluate Subjective Tests"  # New tab for evaluation
         ])
         with tabs[0]:
             upload_preclass_materials(session['session_id'], course_id)
@@ -2326,8 +2065,12 @@ def display_session_content(student_id, course_id, session, username, user_type)
         with tabs[5]:
             display_postclass_analytics(session, course_id)
         with tabs[6]:
+            display_rubrics_tab(session, course_id)
+        with tabs[7]:
             st.subheader("End Terms")
             st.info("End term content will be available soon.")
+        with tabs[8]:  # New tab for evaluation
+            display_evaluation_to_faculty(session['session_id'], student_id, course_id)
 
 def parse_model_response(response_text):
     """Enhanced parser for model responses with better error handling.
@@ -2533,17 +2276,21 @@ def generate_synoptic(questions, context, session_title, num_questions):
         print(f"Response text: {response.text if 'response' in locals() else 'No response generated'}")
         return None
 
-def save_subjective_test(course_id, session_id, title, questions, synoptic):
-    """Save subjective test to database"""
+def save_subjective_test(course_id, session_id, title, questions):
+    """Save subjective test to database with proper ID handling"""
     try:
-        # Format questions to include metadata
+        # Ensure proper string format for IDs
+        course_id = str(course_id)
+        session_id = str(session_id)
+        
+        # Format questions
         formatted_questions = []
         for q in questions:
             formatted_question = {
                 "question": q["question"],
-                "expected_points": q.get("expected_points", []),
-                "difficulty_level": q.get("difficulty_level", "medium"),
-                "suggested_time": q.get("suggested_time", "5 minutes")
+                "expected_points": [],
+                "difficulty_level": "medium",
+                "suggested_time": "5 minutes"
             }
             formatted_questions.append(formatted_question)
 
@@ -2552,157 +2299,48 @@ def save_subjective_test(course_id, session_id, title, questions, synoptic):
             "session_id": session_id,
             "title": title,
             "questions": formatted_questions,
-            "synoptic": synoptic,
             "created_at": datetime.utcnow(),
             "status": "active",
             "submissions": []
         }
         
         result = subjective_tests_collection.insert_one(test_data)
-        return result.inserted_id
+        return str(result.inserted_id)
     except Exception as e:
-        print(f"Error saving subjective test: {e}")
+        print(f"Error saving test: {e}")
         return None
 
-def submit_subjective_test(test_id, student_id, student_answers):
-    """Submit subjective test answers and trigger analysis"""
+def submit_subjective_test(test_id, student_id, answers):
+    """Submit test answers with proper ID handling"""
     try:
-        submission_data = {
+        # Ensure IDs are strings
+        test_id = str(test_id)
+        student_id = str(student_id)
+        
+        # Create submission document
+        submission = {
             "student_id": student_id,
-            "answers": student_answers,
-            "submitted_at": datetime.utcnow()
+            "answers": answers,
+            "submitted_at": datetime.utcnow(),
+            "status": "submitted"
         }
         
+        # Update test document with new submission
         result = subjective_tests_collection.update_one(
-            {"_id": test_id},
-            {
-                "$push": {
-                    "submissions": submission_data
-                }
-            }
+            {"_id": ObjectId(test_id)},
+            {"$push": {"submissions": submission}}
         )
         
-        if result.modified_count > 0:
-            try:
-                # Trigger grading and analysis
-                analysis = analyze_subjective_answers(test_id, student_id)
-                if analysis:
-                    # Update the submission with the analysis and score
-                    subjective_tests_collection.update_one(
-                        {"_id": test_id, "submissions.student_id": student_id},
-                        {
-                            "$set": {
-                                "submissions.$.analysis": analysis,
-                                "submissions.$.score": analysis.get('correctness_score')
-                            }
-                        }
-                    )
-                    return True
-                else:
-                    print("Error: Analysis failed")
-                    return False
-            except Exception as e:
-                print(f"Warning: Grading failed but submission was saved: {e}")
-                return True  # We still return True since the submission itself was successful
-            
-        print("Error: No document was modified")
-        return False
-        
+        return result.modified_count > 0
     except Exception as e:
-        print(f"Error submitting subjective test: {str(e)}")
+        print(f"Error submitting test: {e}")
         return False
-
-def analyze_subjective_answers(test_id, student_id):
-    """Analyze subjective test answers for correctness and improvements"""
-    try:
-        # Get test and submission details
-        test_doc = subjective_tests_collection.find_one({"_id": test_id})
-        if not test_doc:
-            print(f"Test document not found for test_id: {test_id}")
-            return None
-            
-        submission = next(
-            (sub for sub in test_doc.get('submissions', []) if sub['student_id'] == student_id),
-            None
-        )
-        
-        if not submission:
-            print(f"No submission found for student_id: {student_id}")
-            return None
-        
-        # Get questions and answers
-        questions = test_doc.get('questions', [])
-        student_answers = submission.get('answers', [])
-        
-        if not questions or not student_answers:
-            print("No questions or answers found")
-            return None
-            
-        # Retrieve the synoptic from the synoptic_store collection
-        synoptic_doc = synoptic_store_collection.find_one({"session_title": test_doc.get('title')})
-        synoptic = synoptic_doc.get('synoptic', '') if synoptic_doc else ''
-        
-        # Analyze each question separately
-        all_analyses = []
-        total_score = 0
-        
-        for i, (question, answer) in enumerate(zip(questions, student_answers), 1):
-            # Format content for individual question
-            analysis_content = f"Question {i}: {question['question']}\nAnswer: {answer}\n\n"
-            
-            # Get analysis for this question
-            individual_analysis = derive_analytics(
-                goal="Analyze and Grade",
-                reference_text=analysis_content,
-                openai_api_key=OPENAI_API_KEY,
-                context=test_doc.get('context', ''),
-                synoptic=synoptic[i-1] if isinstance(synoptic, list) else synoptic
-            )
-            
-            if individual_analysis:
-                # Extract score for this question
-                try:
-                    score_match = re.search(r'(\d+)(?:/10)?', individual_analysis)
-                    if score_match:
-                        question_score = int(score_match.group(1))
-                        if 1 <= question_score <= 10:
-                            total_score += question_score
-                except:
-                    question_score = 0
-                
-                # Format individual analysis
-                formatted_analysis = f"\n\n## Question {i} Analysis\n\n{individual_analysis}"
-                all_analyses.append(formatted_analysis)
-        
-        if not all_analyses:
-            print("Error: No analyses generated")
-            return None
-            
-        # Calculate average score
-        average_score = round(total_score / len(questions)) if questions else 0
-        
-        # Combine all analyses
-        combined_analysis = "\n".join(all_analyses)
-        
-        # Format final results
-        analysis_results = {
-            "content_analysis": combined_analysis,
-            "analyzed_at": datetime.utcnow(),
-            "correctness_score": average_score
-        }
-        
-        return analysis_results
-        
-    except Exception as e:
-        print(f"Error in analyze_subjective_answers: {str(e)}")
-        return None
 
 def display_subjective_test_tab(student_id, course_id, session_id):
-    """Display subjective tests for students"""
+    """Display subjective tests and results for students"""
     st.header("Subjective Tests")
     
     try:
-        # Query for active tests
         subjective_tests = list(subjective_tests_collection.find({
             "course_id": course_id,
             "session_id": session_id,
@@ -2713,92 +2351,144 @@ def display_subjective_test_tab(student_id, course_id, session_id):
             st.info("No subjective tests available for this session.")
             return
 
-        for test in subjective_tests:
-            with st.expander(f"📝 {test['title']}", expanded=True):
-                # Check for existing submission
-                existing_submission = next(
-                    (sub for sub in test.get('submissions', []) 
-                     if sub['student_id'] == str(student_id)), 
-                    None
-                )
-                
-                if existing_submission:
-                    st.success("Test completed! Your answers have been submitted.")
-                    st.subheader("Your Answers")
-                    for i, ans in enumerate(existing_submission['answers']):
-                        st.markdown(f"**Question {i+1}:** {test['questions'][i]['question']}")
-                        st.markdown(f"**Your Answer:** {ans}")
-                        st.markdown("---")
-                    
-                    # Display analysis
-                    display_subjective_analysis(test['_id'], str(student_id), test.get('context', ''))
-                else:
-                    st.write("Please write your answers:")
-                    with st.form(key=f"subjective_test_form_{test['_id']}"):
-                        student_answers = []
-                        for i, question in enumerate(test['questions']):
-                            st.markdown(f"**Question {i+1}:** {question['question']}")
-                            answer = st.text_area(
-                                "Your answer:",
-                                key=f"q_{test['_id']}_{i}",
-                                height=200
-                            )
-                            student_answers.append(answer)
-
-                        if st.form_submit_button("Submit Test"):
-                            if all(answer.strip() for answer in student_answers):
-                                success = submit_subjective_test(
-                                    test['_id'],
-                                    str(student_id),
-                                    student_answers
-                                )
-                                if success:
-                                    st.success("Test submitted successfully!")
-                                    st.rerun()
-                                else:
-                                    st.error("Error submitting test. Please try again.")
-                            else:
-                                st.error("Please answer all questions before submitting.")
-    except Exception as e:
-        print(f"Error in display_subjective_test_tab: {str(e)}", flush=True)
-        st.error("An error occurred while loading the tests. Please try again later.")
-    
-def display_subjective_analysis(test_id, student_id, context):
-    """Display subjective test analysis to students and faculty"""
-    try:
-        test_doc = subjective_tests_collection.find_one({"_id": test_id})
-        submission = next(
-            (sub for sub in test_doc.get('submissions', []) if sub['student_id'] == student_id),
-            None
-        )
+        # Create tabs for Tests and Results
+        test_tab, results_tab = st.tabs(["Available Tests", "Test Results"])
         
-        if not submission:
-            st.warning("No submission found for analysis.")
+        with test_tab:
+            for test in subjective_tests:
+                with st.expander(f"📝 {test['title']}", expanded=True):
+                    # Check for existing submission
+                    existing_submission = next(
+                        (sub for sub in test.get('submissions', []) 
+                         if sub['student_id'] == str(student_id)), 
+                        None
+                    )
+                    
+                    if existing_submission:
+                        st.success("Test completed! Your answers have been submitted.")
+                        st.subheader("Your Answers")
+                        for i, ans in enumerate(existing_submission['answers']):
+                            st.markdown(f"**Question {i+1}:** {test['questions'][i]['question']}")
+                            st.markdown(f"**Your Answer:** {ans}")
+                            st.markdown("---")
+                    else:
+                        st.write("Please write your answers:")
+                        with st.form(key=f"subjective_test_form_{test['_id']}"):
+                            student_answers = []
+                            for i, question in enumerate(test['questions']):
+                                st.markdown(f"**Question {i+1}:** {question['question']}")
+                                answer = st.text_area(
+                                    "Your answer:",
+                                    key=f"q_{test['_id']}_{i}",
+                                    height=200
+                                )
+                                student_answers.append(answer)
+
+                            if st.form_submit_button("Submit Test"):
+                                if all(answer.strip() for answer in student_answers):
+                                    success = submit_subjective_test(
+                                        test['_id'],
+                                        str(student_id),
+                                        student_answers
+                                    )
+                                    if success:
+                                        st.success("Test submitted successfully!")
+                                        st.rerun()
+                                    else:
+                                        st.error("Error submitting test. Please try again.")
+                                else:
+                                    st.error("Please answer all questions before submitting.")
+        
+        with results_tab:
+            # Display results for completed tests
+            completed_tests = [
+                test for test in subjective_tests
+                if any(sub['student_id'] == str(student_id) for sub in test.get('submissions', []))
+            ]
+            
+            if not completed_tests:
+                st.info("You haven't completed any tests yet.")
+                return
+                
+            # Create a selectbox for choosing which test results to view
+            test_options = {
+                f"{test['title']} (Submitted: {next(sub['submitted_at'].strftime('%Y-%m-%d') for sub in test['submissions'] if sub['student_id'] == str(student_id))})"
+                : test['_id']
+                for test in completed_tests
+            }
+            
+            selected_test = st.selectbox(
+                "Select a test to view results:",
+                options=list(test_options.keys())
+            )
+            
+            if selected_test:
+                test_id = test_options[selected_test]
+                display_test_results(test_id, student_id)
+                
+    except Exception as e:
+        st.error("An error occurred while loading the tests. Please try again later.")
+        print(f"Error in display_subjective_test_tab: {str(e)}")
+        
+def display_test_results(test_id, student_id):
+    """
+    Display test results and analysis for a student
+    
+    Args:
+        test_id: ObjectId or str of the test
+        student_id: str of the student ID
+    """
+    try:
+        # Fetch analysis from evaluation collection
+        analysis = subjective_test_evaluation_collection.find_one({
+            "test_id": test_id,
+            "student_id": str(student_id)
+        })
+        
+        if not analysis:
+            st.info("Analysis will be available soon. Please check back later.")
             return
             
-        # Get or generate analysis
-        analysis = submission.get('analysis')
-        if not analysis:
-            analysis = analyze_subjective_answers(test_id, student_id, context)
-            if not analysis:
-                st.error("Could not generate analysis.")
-                return
+        st.header("Test Analysis")
         
-        # Display analysis results
-        st.subheader("Answer Analysis")
-        
-        # Content analysis
-        st.markdown("### Evidence-Based Feedback")
-        st.markdown(analysis.get('content_analysis', 'No analysis available'))
-        
-        # Improvement suggestions
-        # st.markdown("### Suggested Improvements")
-        # st.markdown(analysis.get('suggested_improvements', 'No suggestions available'))
-        
-        # Analysis timestamp
-        analyzed_at = analysis.get('analyzed_at')
-        if analyzed_at:
-            st.caption(f"Analysis performed at: {analyzed_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        # Display overall evaluation summary if available
+        if "overall_summary" in analysis:
+            with st.expander("Overall Performance Summary", expanded=True):
+                st.markdown(analysis["overall_summary"])
+                
+        # Display individual question evaluations
+        st.subheader("Question-wise Analysis")
+        for eval_item in analysis.get('evaluations', []):
+            with st.expander(f"Question {eval_item['question_number']}", expanded=True):
+                st.markdown("**Question:**")
+                st.markdown(eval_item['question'])
+                
+                st.markdown("**Your Answer:**")
+                st.markdown(eval_item['answer'])
+                
+                st.markdown("**Evaluation:**")
+                st.markdown(eval_item['evaluation'])
+                
+                # Extract and display score if available
+                if "Score:" in eval_item['evaluation']:
+                    score_line = next((line for line in eval_item['evaluation'].split('\n') if "Score:" in line), None)
+                    if score_line:
+                        score = score_line.split("Score:")[1].strip()
+                        st.metric("Score", score)
+                
+                # Display improvement points if available
+                if "Key Areas for Improvement" in eval_item['evaluation']:
+                    st.markdown("**Areas for Improvement:**")
+                    improvement_section = eval_item['evaluation'].split("Key Areas for Improvement")[1]
+                    points = [point.strip('- ').strip() for point in improvement_section.split('\n') if point.strip().startswith('-')]
+                    for point in points:
+                        if point:  # Only display non-empty points
+                            st.markdown(f"• {point}")
+                
+        # Display evaluation timestamp
+        if "evaluated_at" in analysis:
+            st.caption(f"Analysis generated on: {analysis['evaluated_at'].strftime('%Y-%m-%d %H:%M:%S UTC')}")
             
     except Exception as e:
-        st.error(f"Error displaying analysis: {e}")
+        st.error("An error occurred while loading the analysis. Please try again later.")
+        print(f"Error in display_test_results: {str(e)}")
