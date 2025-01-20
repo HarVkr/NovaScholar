@@ -1,0 +1,98 @@
+﻿Review Based Paper
+Title TEXT,
+Publication TEXT,
+Journal_Conference TEXT,
+Abstract TEXT,
+Keywords TEXT,
+Author TEXT
+Date_of_Publication TEXT,
+Intro TEXT,
+Literature_Review TEXT,
+Body: TEXT 
+Protocol: TEXT
+Search String: TEXT 
+Included Studies: TEXT
+Data Collection and Analysis Methods: TEXT 
+Data Extraction Table: TEXT
+Synthesis and Analysis: TEXT 
+Conclusion
+Limitations
+Results
+References
+ 
+Risk of Bias Assessment:Opinion/Perspective Based Paper
+Title TEXT,
+Publication TEXT,
+Journal_Conference TEXT,
+Abstract TEXT,
+Keywords TEXT,
+Author TEXT,
+Date_of_Publication TEXT,
+Intro TEXT,
+Literature_Review TEXT
+Introduction: TEXT 
+Body: TEXT
+Results and Discussion:TEXT
+Conclusion: TEXT 
+References: TEXT 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Empirical Research Paper
+Title TEXT,
+Publication TEXT,
+Journal_Conference TEXT,
+Abstract TEXT,
+Keywords TEXT,
+Author TEXT,
+Date_of_Publication TEXT,
+Intro TEXT,
+Literature_Review TEXT
+Introduction: TEXT 
+Body: TEXT
+ Methodology: TEXT
+        Participants: TEXT - Describes the sample and the sampling methods used.
+Survey Instrument: TEXT - Describes the design and development of the survey questionnaire.
+Data Collection: TEXT - Explains how the survey data was collected.
+Data Analysis: TEXT - Details the statistical techniques used to analyze the data.
+
+
+Results and Discussion:TEXT
+Conclusion: TEXT 
+References: TEXT 
+Research Paper (Other)
+Title TEXT,
+Publication TEXT,
+Journal_Conference TEXT,
+Abstract TEXT,
+Keywords TEXT,
+Author TEXT,
+Date_of_Publication TEXT,
+Intro TEXT,
+Literature_Review TEXT,
+Research_Models_Used TEXT,
+Methodology TEXT,
+Discussion TEXT,
+Future_Scope TEXT,
+Theory TEXT,
+Independent_Variables TEXT,
+nof_Independent_Variables INTEGER,
+Dependent_Variables TEXT,
+nof_Dependent_Variables INTEGER,
+Control_Variables TEXT,
+Extraneous_Variables TEXT,
+nof_Control_Variables INTEGER,
+nof_Extraneous_Variables INTEGER

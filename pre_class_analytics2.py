@@ -178,7 +178,7 @@ class NovaScholarAnalytics:
         - Use both explicit (e.g., direct questions) and implicit (e.g., repeated follow-ups) cues to identify areas of difficulty.
         - Prioritize topics with higher difficulty scores or more students struggling.
         - Ensure numerical values (e.g., difficulty levels, percentages) are between 0 and 1 where applicable.
-        - Make sure to include **All** i.e. **every single student** in the analysis, not just a subset.
+        - Make sure to include All** students in the analysis, not just a subset.
         - for the ai_recommended_actions:
             - Prioritize pedagogy recommendations for critical topics with the high difficulty scores or struggling percentages.
             - For each action:

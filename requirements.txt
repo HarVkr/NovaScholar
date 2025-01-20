@@ -29,3 +29,8 @@ streamlit_option_menu
 beautifulsoup4
 youtube-transcript-api
 requests
+xml==0.0.1
+networkx==3.1
+bokeh==3.2.1
+scikit-learn==1.2.2
+langchain==0.0.208
