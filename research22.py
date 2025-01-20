@@ -16,12 +16,9 @@ import re
 # --------------------------------------------------------------------------------
 load_dotenv()
 # MongoDB
-MONGODB_URI = os.getenv(
-    "MONGODB_UR",
-    "mongodb+srv://milind:05july60@cluster0.d6mld.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0",
-)
+MONGODB_URI = os.getenv("MONGODB_UR")
 # Gemini
-GEMINI_KEY = os.getenv("GEMINI_KEY", "AIzaSyCFIvntck54HOCS5pxxiy9wpr5HJN3r02I")
+GEMINI_KEY = os.getenv("GEMINI_KEY")
 
 # Configure Gemini
 genai.configure(api_key=GEMINI_KEY)
