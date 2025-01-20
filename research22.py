@@ -16,7 +16,7 @@ import re
 # --------------------------------------------------------------------------------
 load_dotenv()
 # MongoDB
-MONGODB_URI = os.getenv("MONGODB_UR")
+MONGODB_URI = os.getenv("MONGODB_URI")
 # Gemini
 GEMINI_KEY = os.getenv("GEMINI_KEY")
 
